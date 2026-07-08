@@ -1,0 +1,16 @@
+# Nano backup files
+*.save
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# API keys / secrets (if you ever separate them)
+secrets.py
+
+# Cache and temp data
+cache_data/
+logs/
+*.log
+
