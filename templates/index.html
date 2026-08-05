@@ -3,292 +3,313 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ app_name }} v{{ app_version }}</title>
+<title>{{ app_name }} — Video Downloader</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Satoshi:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
 
+<!-- ═══════════════════════════════════════════════════
+     SIDEBAR — dark, icon navigation
+═══════════════════════════════════════════════════ -->
 <aside class="sidebar">
-  <div class="sidebar-header">
-    <div class="logo">
-      <span class="logo-icon">✂</span>
-      <div>
-        <span class="logo-name">{{ app_name }}</span>
-        <span class="logo-version">v{{ app_version }}</span>
-      </div>
+  <div class="sidebar-logo">
+    <div class="logo-mark">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
     </div>
   </div>
 
   <nav class="sidebar-nav">
-    <button class="nav-item active" data-tab="download">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-      Download
+    <button class="nav-btn active" data-tab="download" title="Download">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
     </button>
-    <button class="nav-item" data-tab="audio">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-      Audio only
+    <button class="nav-btn" data-tab="audio" title="Audio only">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
     </button>
-    <button class="nav-item" data-tab="transcript">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
-      Transcript
+    <button class="nav-btn" data-tab="transcript" title="Transcript">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
     </button>
-    <button class="nav-item" data-tab="ai">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
-      AI Finder
-      {% if not ai_available %}<span class="badge-off">off</span>{% endif %}
-    </button>
-    <button class="nav-item" data-tab="history">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-      History
+    <button class="nav-btn" data-tab="history" title="History">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
     </button>
   </nav>
 
-  <div class="sidebar-jobs">
-    <p class="sidebar-section-label">Recent jobs</p>
-    <div id="jobs-list"><p class="empty-hint">No jobs yet</p></div>
+  <div class="sidebar-bottom">
+    <div class="sidebar-version">v{{ app_version }}</div>
   </div>
 </aside>
 
-<main class="main">
+<!-- ═══════════════════════════════════════════════════
+     JOBS PANEL — light, left of main, shows active + recent
+═══════════════════════════════════════════════════ -->
+<div class="jobs-panel">
+  <div class="jobs-panel-header">
+    <span class="jobs-panel-title">Downloads</span>
+    <span class="jobs-count" id="jobs-count">0</span>
+  </div>
 
-  <!-- ── DOWNLOAD TAB ──────────────────────────────────────────────── -->
-  <section class="tab-panel active" id="tab-download">
-    <header class="panel-header">
-      <h1>Download</h1>
-      <p class="panel-sub">Video clips and full videos from YouTube, Twitch, and Kick</p>
-    </header>
+  <div class="jobs-list" id="jobs-list">
+    <div class="jobs-empty">
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      <p>No downloads yet</p>
+      <span>Jobs will appear here</span>
+    </div>
+  </div>
+</div>
 
-    <div class="url-row">
-      <div class="url-wrap">
-        <svg class="url-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        <input id="dl-url" type="url" placeholder="Paste a YouTube, Twitch, or Kick URL" autocomplete="off" spellcheck="false">
-        <span id="dl-platform" class="platform-badge hidden"></span>
+<!-- ═══════════════════════════════════════════════════
+     MAIN WORKSPACE
+═══════════════════════════════════════════════════ -->
+<main class="workspace">
+
+  <!-- ── DOWNLOAD ─────────────────────────────────── -->
+  <section class="panel active" id="tab-download">
+
+    <div class="panel-head">
+      <div>
+        <h1 class="panel-title">Download</h1>
+        <p class="panel-sub">Save clips and full videos from YouTube, Twitch, and Kick</p>
+      </div>
+      <div class="workflow-steps">
+        <div class="step active" id="step-url-dl">
+          <span class="step-num">1</span>
+          <span class="step-label">URL</span>
+        </div>
+        <div class="step-line"></div>
+        <div class="step" id="step-options-dl">
+          <span class="step-num">2</span>
+          <span class="step-label">Options</span>
+        </div>
+        <div class="step-line"></div>
+        <div class="step" id="step-done-dl">
+          <span class="step-num">3</span>
+          <span class="step-label">Done</span>
+        </div>
       </div>
     </div>
 
-    <div class="form-row">
-      <div class="field">
-        <label>Filename</label>
-        <input id="dl-filename" type="text" placeholder="my_clip">
+    <!-- Step 1: URL -->
+    <div class="form-section" id="dl-step1">
+      <label class="field-label">Video URL</label>
+      <div class="url-field">
+        <svg class="url-field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <input id="dl-url" type="url" placeholder="https://youtube.com/watch?v=..." autocomplete="off" spellcheck="false">
+        <span id="dl-platform-badge" class="platform-pill hidden"></span>
       </div>
-      <div class="field field-sm">
-        <label>Quality</label>
-        <select id="dl-quality">
-          <option value="720p">720p</option>
-          <option value="1080p" selected>1080p</option>
-          <option value="1440p">1440p</option>
-        </select>
-      </div>
+      <button class="btn-continue" id="dl-url-continue">Continue →</button>
+      <div id="dl-url-error" class="field-error hidden"></div>
     </div>
 
-    <div class="divider-label">Clip — with timestamps</div>
+    <!-- Step 2: Options -->
+    <div class="form-section hidden" id="dl-step2">
+      <div class="step2-url-preview" id="dl-url-preview"></div>
 
-    <div class="form-row">
-      <div class="field">
-        <label>Start time</label>
-        <input id="dl-start" type="text" placeholder="00:00:00">
+      <div class="field-row">
+        <div class="field-group">
+          <label class="field-label">Filename</label>
+          <input class="field-input" id="dl-filename" type="text" placeholder="my_video">
+        </div>
+        <div class="field-group field-group-sm">
+          <label class="field-label">Quality</label>
+          <select class="field-select" id="dl-quality">
+            <option value="720p">720p</option>
+            <option value="1080p" selected>1080p</option>
+            <option value="1440p">1440p</option>
+          </select>
+        </div>
       </div>
-      <div class="field">
-        <label>End time</label>
-        <input id="dl-end" type="text" placeholder="00:00:30">
+
+      <div class="clip-toggle-row">
+        <label class="toggle-label">
+          <input type="checkbox" id="dl-clip-toggle" class="toggle-input">
+          <span class="toggle-track"></span>
+          <span class="toggle-text">Clip a specific section</span>
+        </label>
       </div>
+
+      <div class="clip-fields hidden" id="dl-clip-fields">
+        <div class="field-row">
+          <div class="field-group">
+            <label class="field-label">Start time</label>
+            <input class="field-input field-mono" id="dl-start" type="text" placeholder="00:00:00">
+          </div>
+          <div class="field-group">
+            <label class="field-label">End time</label>
+            <input class="field-input field-mono" id="dl-end" type="text" placeholder="00:01:30">
+          </div>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <button class="btn-back" id="dl-back">← Back</button>
+        <button class="btn-primary" id="btn-download">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download
+        </button>
+      </div>
+      <div id="dl-status" class="status-block hidden"></div>
     </div>
 
-    <div class="btn-row">
-      <button class="btn btn-primary" id="btn-clip">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
-        Download clip
-      </button>
-      <button class="btn btn-ghost" id="btn-full">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Full video
-      </button>
-    </div>
-
-    <div id="dl-status" class="status-card hidden"></div>
   </section>
 
-  <!-- ── AUDIO TAB ─────────────────────────────────────────────────── -->
-  <section class="tab-panel" id="tab-audio">
-    <header class="panel-header">
-      <h1>Audio only</h1>
-      <p class="panel-sub">Extract audio from any video — podcasts, music, speech</p>
-    </header>
+  <!-- ── AUDIO ONLY ────────────────────────────────── -->
+  <section class="panel" id="tab-audio">
 
-    <div class="alert alert-info">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      Requires ffmpeg. If you get an error, run <code>pkg install ffmpeg</code> in Termux first.
-    </div>
-
-    <div class="url-row">
-      <div class="url-wrap">
-        <svg class="url-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        <input id="au-url" type="url" placeholder="Paste a video URL" autocomplete="off" spellcheck="false">
-        <span id="au-platform" class="platform-badge hidden"></span>
+    <div class="panel-head">
+      <div>
+        <h1 class="panel-title">Audio only</h1>
+        <p class="panel-sub">Extract audio — podcasts, music, interviews</p>
+      </div>
+      <div class="workflow-steps">
+        <div class="step active"><span class="step-num">1</span><span class="step-label">URL</span></div>
+        <div class="step-line"></div>
+        <div class="step"><span class="step-num">2</span><span class="step-label">Format</span></div>
+        <div class="step-line"></div>
+        <div class="step"><span class="step-num">3</span><span class="step-label">Done</span></div>
       </div>
     </div>
 
-    <div class="form-row">
-      <div class="field">
-        <label>Filename</label>
-        <input id="au-filename" type="text" placeholder="my_audio">
-      </div>
-      <div class="field field-sm">
-        <label>Format</label>
-        <select id="au-format">
-          <option value="mp3">MP3</option>
-          <option value="m4a">M4A</option>
-          <option value="wav">WAV</option>
-          <option value="opus">Opus</option>
-        </select>
-      </div>
+    <div class="info-pill">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Requires ffmpeg. In Termux: <code>pkg install ffmpeg</code>
     </div>
 
-    <div class="btn-row">
-      <button class="btn btn-primary" id="btn-audio">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
-        Extract audio
-      </button>
+    <div class="form-section" id="au-step1">
+      <label class="field-label">Video URL</label>
+      <div class="url-field">
+        <svg class="url-field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <input id="au-url" type="url" placeholder="https://youtube.com/watch?v=..." autocomplete="off" spellcheck="false">
+        <span id="au-platform-badge" class="platform-pill hidden"></span>
+      </div>
+      <button class="btn-continue" id="au-url-continue">Continue →</button>
+      <div id="au-url-error" class="field-error hidden"></div>
     </div>
 
-    <div id="au-status" class="status-card hidden"></div>
+    <div class="form-section hidden" id="au-step2">
+      <div class="step2-url-preview" id="au-url-preview"></div>
+
+      <div class="field-row">
+        <div class="field-group">
+          <label class="field-label">Filename</label>
+          <input class="field-input" id="au-filename" type="text" placeholder="my_audio">
+        </div>
+      </div>
+
+      <div class="format-grid">
+        <button class="format-card active" data-format="mp3">
+          <span class="format-name">MP3</span>
+          <span class="format-desc">Universal</span>
+        </button>
+        <button class="format-card" data-format="m4a">
+          <span class="format-name">M4A</span>
+          <span class="format-desc">Apple</span>
+        </button>
+        <button class="format-card" data-format="wav">
+          <span class="format-name">WAV</span>
+          <span class="format-desc">Lossless</span>
+        </button>
+        <button class="format-card" data-format="opus">
+          <span class="format-name">Opus</span>
+          <span class="format-desc">Efficient</span>
+        </button>
+      </div>
+
+      <div class="action-row">
+        <button class="btn-back" id="au-back">← Back</button>
+        <button class="btn-primary" id="btn-audio">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          Extract audio
+        </button>
+      </div>
+      <div id="au-status" class="status-block hidden"></div>
+    </div>
+
   </section>
 
-  <!-- ── TRANSCRIPT TAB ────────────────────────────────────────────── -->
-  <section class="tab-panel" id="tab-transcript">
-    <header class="panel-header">
-      <h1>Transcript</h1>
-      <p class="panel-sub">Download and save captions as a readable text file</p>
-    </header>
+  <!-- ── TRANSCRIPT ─────────────────────────────────── -->
+  <section class="panel" id="tab-transcript">
 
-    <div class="alert alert-info">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      Only works on videos with captions enabled. YouTube auto-generated captions count.
-    </div>
-
-    <div class="url-row">
-      <div class="url-wrap">
-        <svg class="url-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        <input id="tr-url" type="url" placeholder="Paste a YouTube URL" autocomplete="off" spellcheck="false">
-        <span id="tr-platform" class="platform-badge hidden"></span>
+    <div class="panel-head">
+      <div>
+        <h1 class="panel-title">Transcript</h1>
+        <p class="panel-sub">Download captions as a clean, readable text file</p>
+      </div>
+      <div class="workflow-steps">
+        <div class="step active"><span class="step-num">1</span><span class="step-label">URL</span></div>
+        <div class="step-line"></div>
+        <div class="step"><span class="step-num">2</span><span class="step-label">Fetch</span></div>
+        <div class="step-line"></div>
+        <div class="step"><span class="step-num">3</span><span class="step-label">Done</span></div>
       </div>
     </div>
 
-    <div class="btn-row">
-      <button class="btn btn-primary" id="btn-transcript" {% if not ai_available %}disabled title="Transcript module not available"{% endif %}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-        Download transcript
-      </button>
+    <div class="info-pill">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      Works with YouTube auto-generated captions. Twitch and Kick rarely have captions.
     </div>
 
-    <div id="tr-status" class="status-card hidden"></div>
-    <div id="tr-result" class="transcript-result hidden"></div>
+    <div class="form-section">
+      <label class="field-label">Video URL</label>
+      <div class="url-field">
+        <svg class="url-field-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        <input id="tr-url" type="url" placeholder="https://youtube.com/watch?v=..." autocomplete="off" spellcheck="false">
+        <span id="tr-platform-badge" class="platform-pill hidden"></span>
+      </div>
+
+      <div class="action-row" style="margin-top:1.5rem">
+        <button class="btn-primary" id="btn-transcript" {% if not ai_available %}disabled title="Transcript module unavailable"{% endif %}>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+          Download transcript
+        </button>
+      </div>
+      <div id="tr-status" class="status-block hidden"></div>
+      <div id="tr-result" class="transcript-card hidden"></div>
+    </div>
+
   </section>
 
-  <!-- ── AI TAB ────────────────────────────────────────────────────── -->
-  <section class="tab-panel" id="tab-ai">
-    <header class="panel-header">
-      <h1>AI Clip Finder</h1>
-      <p class="panel-sub">Gemini reads the transcript and finds the best moments to clip</p>
-    </header>
-
-    {% if not ai_available %}
-    <div class="alert alert-warn">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-      AI unavailable. Set <code>GEMINI_API_KEY</code> in <code>config.py</code> and restart the server.
-    </div>
-    {% endif %}
-
-    <div class="url-row">
-      <div class="url-wrap">
-        <svg class="url-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
-        <input id="ai-url" type="url" placeholder="Paste a YouTube URL with captions" autocomplete="off" spellcheck="false">
-        <span id="ai-platform" class="platform-badge hidden"></span>
+  <!-- ── HISTORY ────────────────────────────────────── -->
+  <section class="panel" id="tab-history">
+    <div class="panel-head">
+      <div>
+        <h1 class="panel-title">History</h1>
+        <p class="panel-sub">Everything ClipperOS has downloaded</p>
       </div>
     </div>
-
-    <div class="form-row">
-      <div class="field">
-        <label>Clip style</label>
-        <select id="ai-prompt">
-          <option value="viral">Viral — most shareable moments</option>
-          <option value="funny">Funny — comedy and reactions</option>
-          <option value="educational">Educational — insights and knowledge</option>
-          <option value="dramatic">Dramatic — tension and emotion</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn btn-primary" id="btn-analyze" {% if not ai_available %}disabled{% endif %}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
-        Find clips
-      </button>
-    </div>
-
-    <div id="ai-status" class="status-card hidden"></div>
-
-    <div id="ai-results" class="ai-results hidden">
-      <div class="ai-results-header">
-        <span id="ai-results-count"></span>
-        <span id="ai-results-badge" class="cache-badge"></span>
-      </div>
-      <div id="ai-clips-list"></div>
-    </div>
-  </section>
-
-  <!-- ── HISTORY TAB ───────────────────────────────────────────────── -->
-  <section class="tab-panel" id="tab-history">
-    <header class="panel-header">
-      <h1>History</h1>
-      <p class="panel-sub">Everything ClipperOS has downloaded</p>
-    </header>
     <div id="history-list" class="history-list">
-      <p class="empty-hint">Loading...</p>
+      <div class="jobs-empty">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <p>No history yet</p>
+        <span>Your downloads will appear here</span>
+      </div>
     </div>
   </section>
 
 </main>
 
-<!-- ── Clip download modal ─────────────────────────────────────────────────── -->
-<div id="clip-modal" class="modal hidden">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 id="modal-title"></h3>
-      <button class="modal-close" id="modal-close">✕</button>
-    </div>
-    <p class="modal-meta" id="modal-meta"></p>
-    <div class="form-row">
-      <div class="field">
-        <label>Video URL</label>
-        <input id="modal-url" type="url" placeholder="Paste the video URL here">
-      </div>
-    </div>
-    <div class="form-row">
-      <div class="field">
-        <label>Filename</label>
-        <input id="modal-filename" type="text">
-      </div>
-      <div class="field field-sm">
-        <label>Quality</label>
-        <select id="modal-quality">
-          <option value="720p">720p</option>
-          <option value="1080p" selected>1080p</option>
-          <option value="1440p">1440p</option>
-        </select>
-      </div>
-    </div>
-    <div class="btn-row">
-      <button class="btn btn-primary" id="modal-download">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-        Download clip
-      </button>
-      <button class="btn btn-ghost" id="modal-cancel">Cancel</button>
-    </div>
-    <div id="modal-status" class="status-card hidden"></div>
-  </div>
-</div>
-<div id="modal-overlay" class="modal-overlay hidden"></div>
+<!-- ═══════════════════════════════════════════════════
+     MOBILE NAV BAR (bottom, shows on small screens)
+═══════════════════════════════════════════════════ -->
+<nav class="mobile-nav">
+  <button class="mobile-nav-btn active" data-tab="download">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    <span>Download</span>
+  </button>
+  <button class="mobile-nav-btn" data-tab="audio">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+    <span>Audio</span>
+  </button>
+  <button class="mobile-nav-btn" data-tab="transcript">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <span>Transcript</span>
+  </button>
+  <button class="mobile-nav-btn" data-tab="history">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+    <span>History</span>
+  </button>
+</nav>
 
 <script src="/static/js/app.js"></script>
 </body>

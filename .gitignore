@@ -14,3 +14,5 @@ cache_data/
 logs/
 *.log
 
+cookies.txt
+

@@ -1,24 +1,40 @@
-/* ClipperOS frontend — app.js v1.3 */
+/* ClipperOS — app.js */
+'use strict';
 
 const $ = id => document.getElementById(id);
 
-/* ── Tab switching ──────────────────────────────────────────────────────────*/
-document.querySelectorAll('.nav-item').forEach(btn => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
-    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-    btn.classList.add('active');
-    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    if (btn.dataset.tab === 'history') loadHistory();
+/* ═══════════════════════════════════════════════════
+   TAB SWITCHING — sidebar + mobile nav in sync
+═══════════════════════════════════════════════════ */
+function switchTab(tab) {
+  document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.tab === tab);
   });
+  document.querySelectorAll('.panel').forEach(p => {
+    p.classList.toggle('active', p.id === 'tab-' + tab);
+  });
+  if (tab === 'history') loadHistory();
+}
+
+document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
-/* ── Platform detection ─────────────────────────────────────────────────────*/
-const PLATFORM_LABELS = { youtube: '▶ YouTube', twitch: '● Twitch', kick: '⚡ Kick' };
+/* ═══════════════════════════════════════════════════
+   PLATFORM DETECTION
+═══════════════════════════════════════════════════ */
+const PLATFORM_LABELS = {
+  youtube: '▶ YouTube',
+  twitch:  '● Twitch',
+  kick:    '⚡ Kick',
+};
 
 function setupPlatformDetect(inputId, badgeId) {
   let timer = null;
-  const input = $(inputId), badge = $(badgeId);
+  const input = $(inputId);
+  const badge = $(badgeId);
+  if (!input || !badge) return;
+
   input.addEventListener('input', () => {
     clearTimeout(timer);
     timer = setTimeout(async () => {
@@ -26,314 +42,389 @@ function setupPlatformDetect(inputId, badgeId) {
       if (!url) { badge.classList.add('hidden'); return; }
       try {
         const r = await fetch('/api/detect', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ url }),
         });
         const { platform } = await r.json();
         if (platform && platform !== 'unknown') {
           badge.textContent = PLATFORM_LABELS[platform] || platform;
           badge.classList.remove('hidden');
-        } else { badge.classList.add('hidden'); }
-      } catch { badge.classList.add('hidden'); }
+        } else {
+          badge.classList.add('hidden');
+        }
+      } catch {
+        badge.classList.add('hidden');
+      }
     }, 400);
   });
 }
 
-setupPlatformDetect('dl-url', 'dl-platform');
-setupPlatformDetect('au-url', 'au-platform');
-setupPlatformDetect('tr-url', 'tr-platform');
-setupPlatformDetect('ai-url', 'ai-platform');
+setupPlatformDetect('dl-url', 'dl-platform-badge');
+setupPlatformDetect('au-url', 'au-platform-badge');
+setupPlatformDetect('tr-url', 'tr-platform-badge');
 
-/* ── Job polling ────────────────────────────────────────────────────────────*/
-const activePolls = {};
+/* ═══════════════════════════════════════════════════
+   WORKFLOW STEPS
+═══════════════════════════════════════════════════ */
+function setStep(steps, active) {
+  steps.forEach((id, i) => {
+    const el = $(id);
+    if (!el) return;
+    el.classList.remove('active', 'done');
+    if (i < active)  el.classList.add('done');
+    if (i === active) el.classList.add('active');
+  });
+}
+
+/* ═══════════════════════════════════════════════════
+   STATUS BLOCK
+═══════════════════════════════════════════════════ */
+function showStatus(id, state, msg, progress = null) {
+  const el = $(id);
+  if (!el) return;
+  const icons = { running: '⏳', done: '✅', error: '❌' };
+  const isRunning = state === 'running';
+  const isIndeterminate = isRunning && progress === null;
+  const pct = progress ?? 0;
+
+  el.className = `status-block ${state}`;
+  el.innerHTML = `
+    <div class="status-msg">${icons[state] || ''} ${msg}</div>
+    ${isRunning ? `
+    <div class="status-progress">
+      <div class="status-progress-fill ${isIndeterminate ? 'indeterminate' : ''}" style="width:${isIndeterminate ? 40 : pct}%"></div>
+    </div>` : ''}
+  `;
+}
+
+/* ═══════════════════════════════════════════════════
+   JOB POLLING
+═══════════════════════════════════════════════════ */
+const polls = {};
 
 function pollJob(jobId, onUpdate, onDone, onError) {
-  if (activePolls[jobId]) return;
-  activePolls[jobId] = setInterval(async () => {
+  if (polls[jobId]) return;
+  polls[jobId] = setInterval(async () => {
     try {
       const r = await fetch(`/api/job/${jobId}`);
+      if (!r.ok) return;
       const job = await r.json();
       onUpdate(job);
       if (job.status === 'done') {
-        clearInterval(activePolls[jobId]); delete activePolls[jobId];
-        onDone(job); refreshJobsList();
+        clearInterval(polls[jobId]); delete polls[jobId];
+        onDone(job); refreshJobsPanel();
       } else if (job.status === 'error') {
-        clearInterval(activePolls[jobId]); delete activePolls[jobId];
-        onError(job); refreshJobsList();
+        clearInterval(polls[jobId]); delete polls[jobId];
+        onError(job); refreshJobsPanel();
       }
     } catch {}
   }, 800);
 }
 
-/* ── Status card ────────────────────────────────────────────────────────────*/
-function showStatus(cardId, state, msg, progress = null) {
-  const el = $(cardId);
-  el.className = `status-card ${state}`;
-  const icons = { running: '⏳', done: '✅', error: '❌' };
-  const barHTML = state === 'running'
-    ? `<div class="progress-bar"><div class="progress-fill ${progress === null ? 'indeterminate' : ''}" style="width:${progress ?? 0}%"></div></div>`
-    : '';
-  el.innerHTML = `<span class="status-msg">${icons[state] || ''} ${msg}${barHTML}</span>`;
+/* ═══════════════════════════════════════════════════
+   JOBS PANEL
+═══════════════════════════════════════════════════ */
+const TYPE_LABEL = {
+  clip:       '✂ Clip',
+  full:       '↓ Video',
+  audio:      '♪ Audio',
+  transcript: '📄 Transcript',
+  ai:         '✦ AI',
+};
+
+async function refreshJobsPanel() {
+  try {
+    const r = await fetch('/api/jobs');
+    const jobs = await r.json();
+    const list = $('jobs-list');
+    const count = $('jobs-count');
+    if (!list) return;
+
+    const running = jobs.filter(j => j.status === 'running').length;
+    if (count) count.textContent = jobs.length;
+
+    if (!jobs.length) {
+      list.innerHTML = `
+        <div class="jobs-empty">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <p>No downloads yet</p>
+          <span>Jobs will appear here</span>
+        </div>`;
+      return;
+    }
+
+    list.innerHTML = jobs.slice(0, 12).map(job => {
+      const isRunning = job.status === 'running';
+      const bar = isRunning ? `
+        <div class="job-bar">
+          <div class="job-bar-fill ${job.progress === null || job.progress === 0 ? 'indeterminate' : ''}" style="width:${job.progress || 0}%"></div>
+        </div>` : '';
+      return `
+      <div class="job-card">
+        <div class="job-card-top">
+          <div class="job-dot ${job.status}"></div>
+          <span class="job-type">${TYPE_LABEL[job.type] || job.type}</span>
+          <span class="job-time">${job.created_at}</span>
+        </div>
+        <div class="job-msg">${esc(job.message || '')}</div>
+        ${bar}
+      </div>`;
+    }).join('');
+  } catch {}
 }
 
-/* ── Download clip ──────────────────────────────────────────────────────────*/
-$('btn-clip').addEventListener('click', async () => {
-  const url = $('dl-url').value.trim(), start = $('dl-start').value.trim(),
-        end = $('dl-end').value.trim(), filename = $('dl-filename').value.trim() || 'clip',
-        quality = $('dl-quality').value;
-  if (!url || !start || !end) {
-    showStatus('dl-status', 'error', !url ? 'Paste a video URL first.' : !start ? 'Enter a start time.' : 'Enter an end time.');
+setInterval(refreshJobsPanel, 2500);
+refreshJobsPanel();
+
+/* ═══════════════════════════════════════════════════
+   DOWNLOAD — two-step flow
+═══════════════════════════════════════════════════ */
+const DL_STEPS = ['step-url-dl', 'step-options-dl', 'step-done-dl'];
+
+// Step 1 → 2
+$('dl-url-continue').addEventListener('click', () => {
+  const url = $('dl-url').value.trim();
+  const errEl = $('dl-url-error');
+
+  if (!url) {
+    errEl.textContent = '⚠ Paste a video URL to continue.';
+    errEl.classList.remove('hidden');
     return;
   }
-  showStatus('dl-status', 'running', `Clipping ${start} → ${end}...`);
+  if (!url.startsWith('http')) {
+    errEl.textContent = '⚠ That doesn\'t look like a valid URL.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  errEl.classList.add('hidden');
+  $('dl-url-preview').textContent = url;
+  $('dl-step1').classList.add('hidden');
+  $('dl-step2').classList.remove('hidden');
+  setStep(DL_STEPS, 1);
+});
+
+$('dl-back').addEventListener('click', () => {
+  $('dl-step2').classList.add('hidden');
+  $('dl-step1').classList.remove('hidden');
+  $('dl-status').classList.add('hidden');
+  setStep(DL_STEPS, 0);
+});
+
+// Clip toggle
+$('dl-clip-toggle').addEventListener('change', e => {
+  $('dl-clip-fields').classList.toggle('hidden', !e.target.checked);
+});
+
+// Download
+$('btn-download').addEventListener('click', async () => {
+  const url      = $('dl-url').value.trim();
+  const filename = $('dl-filename').value.trim() || 'video';
+  const quality  = $('dl-quality').value;
+  const isClip   = $('dl-clip-toggle').checked;
+  const start    = $('dl-start').value.trim();
+  const end      = $('dl-end').value.trim();
+
+  if (isClip) {
+    if (!start) { showStatus('dl-status', 'error', 'Enter a start time (HH:MM:SS).'); return; }
+    if (!end)   { showStatus('dl-status', 'error', 'Enter an end time (HH:MM:SS).'); return; }
+  }
+
+  const endpoint = isClip ? '/api/download/clip' : '/api/download/full';
+  const body = isClip
+    ? { url, filename, quality, start, end }
+    : { url, filename, quality };
+
+  showStatus('dl-status', 'running', isClip ? `Clipping ${start} → ${end}...` : 'Downloading video...');
+  $('dl-status').classList.remove('hidden');
+
   try {
-    const r = await fetch('/api/download/clip', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, start, end, filename, quality }),
+    const r = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
     const { job_id, error } = await r.json();
     if (error) { showStatus('dl-status', 'error', error); return; }
+
     pollJob(job_id,
       job => showStatus('dl-status', 'running', job.message, job.progress),
-      job => showStatus('dl-status', 'done', `Saved as <strong>${job.result?.filename}</strong> · ${quality}`),
+      job => {
+        showStatus('dl-status', 'done', `Saved as ${job.result?.filename || filename}`);
+        setStep(DL_STEPS, 2);
+      },
       job => showStatus('dl-status', 'error', job.error || 'Download failed.')
     );
-  } catch { showStatus('dl-status', 'error', 'Network error — is the server running?'); }
+  } catch {
+    showStatus('dl-status', 'error', 'Could not reach the server. Is ClipperOS running?');
+  }
 });
 
-/* ── Download full ──────────────────────────────────────────────────────────*/
-$('btn-full').addEventListener('click', async () => {
-  const url = $('dl-url').value.trim(), filename = $('dl-filename').value.trim() || 'video',
-        quality = $('dl-quality').value;
-  if (!url) { showStatus('dl-status', 'error', 'Paste a video URL first.'); return; }
-  showStatus('dl-status', 'running', 'Downloading full video...');
-  try {
-    const r = await fetch('/api/download/full', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, filename, quality }),
-    });
-    const { job_id, error } = await r.json();
-    if (error) { showStatus('dl-status', 'error', error); return; }
-    pollJob(job_id,
-      job => showStatus('dl-status', 'running', job.message, job.progress),
-      job => showStatus('dl-status', 'done', `Saved as <strong>${job.result?.filename}</strong> · ${quality}`),
-      job => showStatus('dl-status', 'error', job.error || 'Download failed.')
-    );
-  } catch { showStatus('dl-status', 'error', 'Network error — is the server running?'); }
+/* ═══════════════════════════════════════════════════
+   AUDIO — two-step flow
+═══════════════════════════════════════════════════ */
+let selectedFormat = 'mp3';
+
+document.querySelectorAll('.format-card').forEach(card => {
+  card.addEventListener('click', () => {
+    document.querySelectorAll('.format-card').forEach(c => c.classList.remove('active'));
+    card.classList.add('active');
+    selectedFormat = card.dataset.format;
+  });
 });
 
-/* ── Audio only ─────────────────────────────────────────────────────────────*/
+$('au-url-continue').addEventListener('click', () => {
+  const url = $('au-url').value.trim();
+  const errEl = $('au-url-error');
+
+  if (!url) {
+    errEl.textContent = '⚠ Paste a video URL to continue.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  errEl.classList.add('hidden');
+  $('au-url-preview').textContent = url;
+  $('au-step1').classList.add('hidden');
+  $('au-step2').classList.remove('hidden');
+});
+
+$('au-back').addEventListener('click', () => {
+  $('au-step2').classList.add('hidden');
+  $('au-step1').classList.remove('hidden');
+  $('au-status').classList.add('hidden');
+});
+
 $('btn-audio').addEventListener('click', async () => {
-  const url = $('au-url').value.trim(), filename = $('au-filename').value.trim() || 'audio',
-        format = $('au-format').value;
-  if (!url) { showStatus('au-status', 'error', 'Paste a video URL first.'); return; }
-  showStatus('au-status', 'running', `Extracting ${format.toUpperCase()} audio...`);
+  const url      = $('au-url').value.trim();
+  const filename = $('au-filename').value.trim() || 'audio';
+
+  showStatus('au-status', 'running', `Extracting ${selectedFormat.toUpperCase()} audio...`);
+  $('au-status').classList.remove('hidden');
+
   try {
     const r = await fetch('/api/download/audio', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, filename, format }),
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, filename, format: selectedFormat }),
     });
     const { job_id, error } = await r.json();
     if (error) { showStatus('au-status', 'error', error); return; }
+
     pollJob(job_id,
       job => showStatus('au-status', 'running', job.message, job.progress),
-      job => showStatus('au-status', 'done', `Saved as <strong>${job.result?.filename}</strong>`),
+      job => showStatus('au-status', 'done', `Saved as ${job.result?.filename || filename + '.' + selectedFormat}`),
       job => showStatus('au-status', 'error', job.error || 'Audio extraction failed.')
     );
-  } catch { showStatus('au-status', 'error', 'Network error — is the server running?'); }
+  } catch {
+    showStatus('au-status', 'error', 'Could not reach the server. Is ClipperOS running?');
+  }
 });
 
-/* ── Transcript ─────────────────────────────────────────────────────────────*/
-$('btn-transcript') && $('btn-transcript').addEventListener('click', async () => {
-  const url = $('tr-url').value.trim();
-  if (!url) { showStatus('tr-status', 'error', 'Paste a YouTube URL first.'); return; }
-  showStatus('tr-status', 'running', 'Downloading transcript...');
-  $('tr-result').classList.add('hidden');
-  try {
-    const r = await fetch('/api/transcript', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url }),
-    });
-    const { job_id, error } = await r.json();
-    if (error) { showStatus('tr-status', 'error', error); return; }
-    pollJob(job_id,
-      job => showStatus('tr-status', 'running', job.message, job.progress),
-      job => { showStatus('tr-status', 'done', job.message); renderTranscript(job.result); },
-      job => showStatus('tr-status', 'error', job.error || 'Transcript download failed.')
-    );
-  } catch { showStatus('tr-status', 'error', 'Network error — is the server running?'); }
-});
+/* ═══════════════════════════════════════════════════
+   TRANSCRIPT
+═══════════════════════════════════════════════════ */
+const trBtn = $('btn-transcript');
+if (trBtn) {
+  trBtn.addEventListener('click', async () => {
+    const url = $('tr-url').value.trim();
+    if (!url) {
+      showStatus('tr-status', 'error', 'Paste a YouTube URL first.');
+      $('tr-status').classList.remove('hidden');
+      return;
+    }
+
+    showStatus('tr-status', 'running', 'Downloading transcript...');
+    $('tr-status').classList.remove('hidden');
+    $('tr-result').classList.add('hidden');
+
+    try {
+      const r = await fetch('/api/transcript', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const { job_id, error } = await r.json();
+      if (error) { showStatus('tr-status', 'error', error); return; }
+
+      pollJob(job_id,
+        job => showStatus('tr-status', 'running', job.message, job.progress),
+        job => {
+          showStatus('tr-status', 'done', job.message);
+          renderTranscript(job.result);
+        },
+        job => showStatus('tr-status', 'error', job.error || 'Transcript download failed.')
+      );
+    } catch {
+      showStatus('tr-status', 'error', 'Could not reach the server. Is ClipperOS running?');
+    }
+  });
+}
 
 function renderTranscript(result) {
   if (!result) return;
   const el = $('tr-result');
-  const cachedBadge = result.cached ? '<span class="cache-badge" style="margin-left:8px">cached</span>' : '';
+  const cached = result.cached ? ' <span style="font-size:10px;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:10px;font-weight:600">cached</span>' : '';
   el.innerHTML = `
-    <div class="tr-header">
-      <span class="tr-title">${escHtml(result.title || result.video_id)}${cachedBadge}</span>
-      <span class="tr-meta">${result.word_count.toLocaleString()} words · ${result.platform}</span>
+    <div class="tc-header">
+      <span class="tc-title">${esc(result.title || result.video_id)}${cached}</span>
+      <span class="tc-meta">${(result.word_count || 0).toLocaleString()} words · ${esc(result.platform)}</span>
     </div>
-    <div class="tr-preview">${escHtml(result.preview || '')}</div>
-    ${result.file_path ? `<div class="tr-path">📁 ${escHtml(result.file_path)}</div>` : ''}
+    <div class="tc-preview">${esc(result.preview || '')}</div>
+    ${result.file_path ? `<div class="tc-footer">📁 ${esc(result.file_path)}</div>` : ''}
   `;
   el.classList.remove('hidden');
 }
 
-/* ── AI Analyze ─────────────────────────────────────────────────────────────*/
-$('btn-analyze').addEventListener('click', async () => {
-  const url = $('ai-url').value.trim(), prompt_type = $('ai-prompt').value;
-  if (!url) { showStatus('ai-status', 'error', 'Paste a video URL first.'); return; }
-  showStatus('ai-status', 'running', 'Starting analysis...');
-  $('ai-results').classList.add('hidden');
-  try {
-    const r = await fetch('/api/analyze', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, prompt_type }),
-    });
-    const { job_id, error } = await r.json();
-    if (error) { showStatus('ai-status', 'error', error); return; }
-    pollJob(job_id,
-      job => showStatus('ai-status', 'running', job.message, job.progress),
-      job => { showStatus('ai-status', 'done', job.message); renderClips(job.result); },
-      job => showStatus('ai-status', 'error', job.error || 'Analysis failed.')
-    );
-  } catch { showStatus('ai-status', 'error', 'Network error — is the server running?'); }
-});
-
-/* ── Render AI clips (with download button on each) ─────────────────────────*/
-function renderClips(result) {
-  if (!result || !result.clips || !result.clips.length) return;
-  const { clips, cached, url: sourceUrl } = result;
-  $('ai-results-count').textContent = `${clips.length} clips found`;
-  $('ai-results-badge').textContent = cached ? 'cached' : 'fresh';
-  $('ai-results').classList.remove('hidden');
-
-  $('ai-clips-list').innerHTML = clips.map(clip => {
-    const scoreClass = clip.score >= 8 ? 'score-high' : clip.score >= 6 ? 'score-mid' : 'score-low';
-    const dur = calcDuration(clip.start, clip.end);
-    const clipJson = escAttr(JSON.stringify(clip));
-    const urlJson  = escAttr(JSON.stringify(sourceUrl || ''));
-    return `
-    <div class="clip-card">
-      <div class="clip-rank">${clip.rank}</div>
-      <div class="clip-body">
-        <div class="clip-title">${escHtml(clip.title)}</div>
-        <div class="clip-reason">${escHtml(clip.reason)}</div>
-        <div class="clip-meta">
-          <span class="clip-time">${clip.start} → ${clip.end}</span>
-          <span class="clip-duration">${dur}</span>
-          <span class="clip-score ${scoreClass}">⭐ ${clip.score.toFixed(1)}</span>
-        </div>
-      </div>
-      <div class="clip-dl-btn">
-        <button class="btn btn-primary btn-sm"
-          onclick='openClipModal(${clipJson}, ${urlJson})'>
-          ↓ Clip
-        </button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function calcDuration(start, end) {
-  const toSec = ts => { const p = ts.split(':'); return +p[0]*3600 + +p[1]*60 + parseFloat(p[2]); };
-  try { const d = Math.round(toSec(end) - toSec(start)); return `${Math.floor(d/60)}m ${d%60}s`; }
-  catch { return ''; }
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-
-function escAttr(s) {
-  return String(s).replace(/'/g, '&#39;').replace(/"/g, '&quot;');
-}
-
-/* ── Clip download modal ────────────────────────────────────────────────────*/
-let pendingClip = null;
-
-function openClipModal(clip, sourceUrl) {
-  pendingClip = clip;
-  $('modal-title').textContent = clip.title;
-  $('modal-meta').textContent  = `${clip.start} → ${clip.end}  ·  score ${clip.score.toFixed(1)}  ·  ${calcDuration(clip.start, clip.end)}`;
-  $('modal-url').value      = sourceUrl || $('ai-url').value || '';
-  $('modal-filename').value = (clip.title || 'clip').replace(/\s+/g,'_').replace(/[^\w]/g,'').slice(0,60);
-  $('modal-status').className = 'status-card hidden';
-  $('clip-modal').classList.remove('hidden');
-  $('modal-overlay').classList.remove('hidden');
-}
-
-function closeModal() {
-  $('clip-modal').classList.add('hidden');
-  $('modal-overlay').classList.add('hidden');
-  pendingClip = null;
-}
-
-$('modal-close').addEventListener('click', closeModal);
-$('modal-cancel').addEventListener('click', closeModal);
-$('modal-overlay').addEventListener('click', closeModal);
-
-$('modal-download').addEventListener('click', async () => {
-  if (!pendingClip) return;
-  const url = $('modal-url').value.trim(), filename = $('modal-filename').value.trim() || 'clip',
-        quality = $('modal-quality').value;
-  if (!url) { showStatus('modal-status', 'error', 'Paste the video URL above.'); return; }
-  showStatus('modal-status', 'running', 'Starting download...');
-  try {
-    const r = await fetch('/api/download/clip', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ url, filename, quality, start: pendingClip.start, end: pendingClip.end }),
-    });
-    const { job_id, error } = await r.json();
-    if (error) { showStatus('modal-status', 'error', error); return; }
-    pollJob(job_id,
-      job => showStatus('modal-status', 'running', job.message, job.progress),
-      job => { showStatus('modal-status', 'done', `Saved as ${job.result?.filename}`); setTimeout(closeModal, 1800); },
-      job => showStatus('modal-status', 'error', job.error || 'Download failed.')
-    );
-  } catch { showStatus('modal-status', 'error', 'Network error.'); }
-});
-
-/* ── Jobs sidebar ───────────────────────────────────────────────────────────*/
-const TYPE_LABEL = { clip: '✂ Clip', full: '↓ Full', audio: '♪ Audio', transcript: '📄 Transcript', ai: '✦ AI' };
-
-async function refreshJobsList() {
-  try {
-    const r = await fetch('/api/jobs');
-    const jobs = await r.json();
-    const el = $('jobs-list');
-    if (!jobs.length) { el.innerHTML = '<p class="empty-hint">No jobs yet</p>'; return; }
-    el.innerHTML = jobs.slice(0, 8).map(job => `
-      <div class="job-chip ${job.status}">
-        <div class="job-dot"></div>
-        <span class="job-label">${TYPE_LABEL[job.type] || job.type} · ${escHtml((job.message || '').slice(0,26))}</span>
-        <span class="job-time">${job.created_at}</span>
-      </div>`).join('');
-  } catch {}
-}
-
-setInterval(refreshJobsList, 3000);
-refreshJobsList();
-
-/* ── History ────────────────────────────────────────────────────────────────*/
+/* ═══════════════════════════════════════════════════
+   HISTORY
+═══════════════════════════════════════════════════ */
 async function loadHistory() {
   const el = $('history-list');
+  if (!el) return;
+
   try {
     const r = await fetch('/api/history');
     const entries = await r.json();
-    if (!entries.length) { el.innerHTML = '<p class="empty-hint">No downloads yet.</p>'; return; }
+
+    if (!entries.length) {
+      el.innerHTML = `
+        <div class="jobs-empty">
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <p>No history yet</p>
+          <span>Your downloads will appear here</span>
+        </div>`;
+      return;
+    }
+
     el.innerHTML = entries.map(e => {
-      if (!e.kind) return `<div class="history-entry">${escHtml(e.raw)}</div>`;
-      const kindClass = e.kind === 'CLIP' ? 'kind-clip' : 'kind-full';
+      if (!e.kind) return `<div class="history-card"><div class="history-body"><div class="history-name">${esc(e.raw)}</div></div></div>`;
+      const kindMap = { CLIP: 'kind-clip', FULL: 'kind-full' };
+      const kindClass = kindMap[e.kind] || 'kind-full';
+      const time = (e.time || '').split(' ')[1] || e.time;
       return `
       <div class="history-card">
-        <span class="history-kind ${kindClass}">${e.kind}</span>
+        <span class="history-kind ${kindClass}">${esc(e.kind)}</span>
         <div class="history-body">
-          <div class="history-name">${escHtml(e.name)}</div>
-          <div class="history-detail">${escHtml(e.platform)} · <a href="${escHtml(e.url)}" style="color:var(--text-3)">${escHtml(e.url.slice(0,55))}${e.url.length > 55 ? '...' : ''}</a></div>
+          <div class="history-name">${esc(e.name)}</div>
+          <div class="history-detail">${esc(e.platform)} · ${esc(e.url.slice(0, 60))}${e.url.length > 60 ? '…' : ''}</div>
         </div>
-        <span class="history-time">${e.time.split(' ')[1] || e.time}</span>
+        <span class="history-time">${esc(time)}</span>
       </div>`;
     }).join('');
-  } catch { el.innerHTML = '<p class="empty-hint">Could not load history.</p>'; }
+  } catch {
+    el.innerHTML = '<p style="color:var(--text-tertiary);font-size:13px;padding:20px 0">Could not load history.</p>';
+  }
+}
+
+/* ═══════════════════════════════════════════════════
+   UTILS
+═══════════════════════════════════════════════════ */
+function esc(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
 }
