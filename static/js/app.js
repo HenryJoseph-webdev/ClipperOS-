@@ -1,10 +1,10 @@
-/* ClipperOS — app.js */
+/* ClipperOS — app.js v1.4 */
 'use strict';
 
 const $ = id => document.getElementById(id);
 
 /* ═══════════════════════════════════════════════════
-   TAB SWITCHING — sidebar + mobile nav in sync
+   TAB SWITCHING
 ═══════════════════════════════════════════════════ */
 function switchTab(tab) {
   document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(b => {
@@ -13,7 +13,8 @@ function switchTab(tab) {
   document.querySelectorAll('.panel').forEach(p => {
     p.classList.toggle('active', p.id === 'tab-' + tab);
   });
-  if (tab === 'history') loadHistory();
+  if (tab === 'history')  loadHistory();
+  if (tab === 'settings') loadAuthStatus();
 }
 
 document.querySelectorAll('.nav-btn, .mobile-nav-btn').forEach(btn => {
@@ -31,10 +32,8 @@ const PLATFORM_LABELS = {
 
 function setupPlatformDetect(inputId, badgeId) {
   let timer = null;
-  const input = $(inputId);
-  const badge = $(badgeId);
+  const input = $(inputId), badge = $(badgeId);
   if (!input || !badge) return;
-
   input.addEventListener('input', () => {
     clearTimeout(timer);
     timer = setTimeout(async () => {
@@ -53,9 +52,7 @@ function setupPlatformDetect(inputId, badgeId) {
         } else {
           badge.classList.add('hidden');
         }
-      } catch {
-        badge.classList.add('hidden');
-      }
+      } catch { badge.classList.add('hidden'); }
     }, 400);
   });
 }
@@ -65,19 +62,6 @@ setupPlatformDetect('au-url', 'au-platform-badge');
 setupPlatformDetect('tr-url', 'tr-platform-badge');
 
 /* ═══════════════════════════════════════════════════
-   WORKFLOW STEPS
-═══════════════════════════════════════════════════ */
-function setStep(steps, active) {
-  steps.forEach((id, i) => {
-    const el = $(id);
-    if (!el) return;
-    el.classList.remove('active', 'done');
-    if (i < active)  el.classList.add('done');
-    if (i === active) el.classList.add('active');
-  });
-}
-
-/* ═══════════════════════════════════════════════════
    STATUS BLOCK
 ═══════════════════════════════════════════════════ */
 function showStatus(id, state, msg, progress = null) {
@@ -85,17 +69,40 @@ function showStatus(id, state, msg, progress = null) {
   if (!el) return;
   const icons = { running: '⏳', done: '✅', error: '❌' };
   const isRunning = state === 'running';
-  const isIndeterminate = isRunning && progress === null;
-  const pct = progress ?? 0;
-
+  const isIndet   = isRunning && progress === null;
   el.className = `status-block ${state}`;
   el.innerHTML = `
     <div class="status-msg">${icons[state] || ''} ${msg}</div>
     ${isRunning ? `
     <div class="status-progress">
-      <div class="status-progress-fill ${isIndeterminate ? 'indeterminate' : ''}" style="width:${isIndeterminate ? 40 : pct}%"></div>
+      <div class="status-progress-fill ${isIndet ? 'indeterminate' : ''}"
+           style="width:${isIndet ? 40 : (progress || 0)}%"></div>
     </div>` : ''}
   `;
+}
+
+async function fetchJson(url, options = {}) {
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch {
+    throw new Error('Could not reach the server. Is ClipperOS running?');
+  }
+
+  const text = await response.text();
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    if (response.status === 404) {
+      throw new Error(
+        'The server is running an old version. Stop ClipperOS (Ctrl+C in the terminal), then run: python webapp.py'
+      );
+    }
+    throw new Error(`Server returned an unexpected response (${response.status}). Restart ClipperOS and try again.`);
+  }
+
+  return { response, data };
 }
 
 /* ═══════════════════════════════════════════════════
@@ -126,11 +133,8 @@ function pollJob(jobId, onUpdate, onDone, onError) {
    JOBS PANEL
 ═══════════════════════════════════════════════════ */
 const TYPE_LABEL = {
-  clip:       '✂ Clip',
-  full:       '↓ Video',
-  audio:      '♪ Audio',
-  transcript: '📄 Transcript',
-  ai:         '✦ AI',
+  clip: '✂ Clip', full: '↓ Video',
+  audio: '♪ Audio', transcript: '📄 Transcript', ai: '✦ AI',
 };
 
 async function refreshJobsPanel() {
@@ -140,16 +144,16 @@ async function refreshJobsPanel() {
     const list = $('jobs-list');
     const count = $('jobs-count');
     if (!list) return;
-
-    const running = jobs.filter(j => j.status === 'running').length;
     if (count) count.textContent = jobs.length;
 
     if (!jobs.length) {
       list.innerHTML = `
         <div class="jobs-empty">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          <p>No downloads yet</p>
-          <span>Jobs will appear here</span>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <p>No downloads yet</p><span>Jobs will appear here</span>
         </div>`;
       return;
     }
@@ -158,7 +162,8 @@ async function refreshJobsPanel() {
       const isRunning = job.status === 'running';
       const bar = isRunning ? `
         <div class="job-bar">
-          <div class="job-bar-fill ${job.progress === null || job.progress === 0 ? 'indeterminate' : ''}" style="width:${job.progress || 0}%"></div>
+          <div class="job-bar-fill ${!job.progress ? 'indeterminate' : ''}"
+               style="width:${job.progress || 0}%"></div>
         </div>` : '';
       return `
       <div class="job-card">
@@ -178,27 +183,29 @@ setInterval(refreshJobsPanel, 2500);
 refreshJobsPanel();
 
 /* ═══════════════════════════════════════════════════
-   DOWNLOAD — two-step flow
+   DOWNLOAD — two-step
 ═══════════════════════════════════════════════════ */
 const DL_STEPS = ['step-url-dl', 'step-options-dl', 'step-done-dl'];
 
-// Step 1 → 2
+function setStep(steps, active) {
+  steps.forEach((id, i) => {
+    const el = $(id);
+    if (!el) return;
+    el.classList.remove('active', 'done');
+    if (i < active)  el.classList.add('done');
+    if (i === active) el.classList.add('active');
+  });
+}
+
 $('dl-url-continue').addEventListener('click', () => {
   const url = $('dl-url').value.trim();
-  const errEl = $('dl-url-error');
-
-  if (!url) {
-    errEl.textContent = '⚠ Paste a video URL to continue.';
-    errEl.classList.remove('hidden');
+  const err = $('dl-url-error');
+  if (!url || !url.startsWith('http')) {
+    err.textContent = !url ? '⚠ Paste a video URL to continue.' : '⚠ That doesn\'t look like a valid URL.';
+    err.classList.remove('hidden');
     return;
   }
-  if (!url.startsWith('http')) {
-    errEl.textContent = '⚠ That doesn\'t look like a valid URL.';
-    errEl.classList.remove('hidden');
-    return;
-  }
-
-  errEl.classList.add('hidden');
+  err.classList.add('hidden');
   $('dl-url-preview').textContent = url;
   $('dl-step1').classList.add('hidden');
   $('dl-step2').classList.remove('hidden');
@@ -212,12 +219,10 @@ $('dl-back').addEventListener('click', () => {
   setStep(DL_STEPS, 0);
 });
 
-// Clip toggle
 $('dl-clip-toggle').addEventListener('change', e => {
   $('dl-clip-fields').classList.toggle('hidden', !e.target.checked);
 });
 
-// Download
 $('btn-download').addEventListener('click', async () => {
   const url      = $('dl-url').value.trim();
   const filename = $('dl-filename').value.trim() || 'video';
@@ -227,22 +232,19 @@ $('btn-download').addEventListener('click', async () => {
   const end      = $('dl-end').value.trim();
 
   if (isClip) {
-    if (!start) { showStatus('dl-status', 'error', 'Enter a start time (HH:MM:SS).'); return; }
-    if (!end)   { showStatus('dl-status', 'error', 'Enter an end time (HH:MM:SS).'); return; }
+    if (!start) { showStatus('dl-status', 'error', 'Enter a start time (HH:MM:SS).'); $('dl-status').classList.remove('hidden'); return; }
+    if (!end)   { showStatus('dl-status', 'error', 'Enter an end time (HH:MM:SS).');  $('dl-status').classList.remove('hidden'); return; }
   }
 
   const endpoint = isClip ? '/api/download/clip' : '/api/download/full';
-  const body = isClip
-    ? { url, filename, quality, start, end }
-    : { url, filename, quality };
+  const body     = isClip ? { url, filename, quality, start, end } : { url, filename, quality };
 
   showStatus('dl-status', 'running', isClip ? `Clipping ${start} → ${end}...` : 'Downloading video...');
   $('dl-status').classList.remove('hidden');
 
   try {
     const r = await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     const { job_id, error } = await r.json();
@@ -250,10 +252,7 @@ $('btn-download').addEventListener('click', async () => {
 
     pollJob(job_id,
       job => showStatus('dl-status', 'running', job.message, job.progress),
-      job => {
-        showStatus('dl-status', 'done', `Saved as ${job.result?.filename || filename}`);
-        setStep(DL_STEPS, 2);
-      },
+      job => { showStatus('dl-status', 'done', `Saved as ${job.result?.filename || filename}`); setStep(DL_STEPS, 2); },
       job => showStatus('dl-status', 'error', job.error || 'Download failed.')
     );
   } catch {
@@ -262,7 +261,7 @@ $('btn-download').addEventListener('click', async () => {
 });
 
 /* ═══════════════════════════════════════════════════
-   AUDIO — two-step flow
+   AUDIO — two-step
 ═══════════════════════════════════════════════════ */
 let selectedFormat = 'mp3';
 
@@ -276,15 +275,9 @@ document.querySelectorAll('.format-card').forEach(card => {
 
 $('au-url-continue').addEventListener('click', () => {
   const url = $('au-url').value.trim();
-  const errEl = $('au-url-error');
-
-  if (!url) {
-    errEl.textContent = '⚠ Paste a video URL to continue.';
-    errEl.classList.remove('hidden');
-    return;
-  }
-
-  errEl.classList.add('hidden');
+  const err = $('au-url-error');
+  if (!url) { err.textContent = '⚠ Paste a video URL to continue.'; err.classList.remove('hidden'); return; }
+  err.classList.add('hidden');
   $('au-url-preview').textContent = url;
   $('au-step1').classList.add('hidden');
   $('au-step2').classList.remove('hidden');
@@ -305,8 +298,7 @@ $('btn-audio').addEventListener('click', async () => {
 
   try {
     const r = await fetch('/api/download/audio', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ url, filename, format: selectedFormat }),
     });
     const { job_id, error } = await r.json();
@@ -334,15 +326,13 @@ if (trBtn) {
       $('tr-status').classList.remove('hidden');
       return;
     }
-
     showStatus('tr-status', 'running', 'Downloading transcript...');
     $('tr-status').classList.remove('hidden');
     $('tr-result').classList.add('hidden');
 
     try {
       const r = await fetch('/api/transcript', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
       const { job_id, error } = await r.json();
@@ -350,10 +340,7 @@ if (trBtn) {
 
       pollJob(job_id,
         job => showStatus('tr-status', 'running', job.message, job.progress),
-        job => {
-          showStatus('tr-status', 'done', job.message);
-          renderTranscript(job.result);
-        },
+        job => { showStatus('tr-status', 'done', job.message); renderTranscript(job.result); },
         job => showStatus('tr-status', 'error', job.error || 'Transcript download failed.')
       );
     } catch {
@@ -364,12 +351,14 @@ if (trBtn) {
 
 function renderTranscript(result) {
   if (!result) return;
-  const el = $('tr-result');
-  const cached = result.cached ? ' <span style="font-size:10px;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:10px;font-weight:600">cached</span>' : '';
+  const el  = $('tr-result');
+  const tag = result.cached
+    ? ' <span style="font-size:10px;background:#d1fae5;color:#065f46;padding:1px 6px;border-radius:10px;font-weight:600">cached</span>'
+    : '';
   el.innerHTML = `
     <div class="tc-header">
-      <span class="tc-title">${esc(result.title || result.video_id)}${cached}</span>
-      <span class="tc-meta">${(result.word_count || 0).toLocaleString()} words · ${esc(result.platform)}</span>
+      <span class="tc-title">${esc(result.title || result.video_id)}${tag}</span>
+      <span class="tc-meta">${(result.word_count||0).toLocaleString()} words · ${esc(result.platform)}</span>
     </div>
     <div class="tc-preview">${esc(result.preview || '')}</div>
     ${result.file_path ? `<div class="tc-footer">📁 ${esc(result.file_path)}</div>` : ''}
@@ -383,32 +372,29 @@ function renderTranscript(result) {
 async function loadHistory() {
   const el = $('history-list');
   if (!el) return;
-
   try {
     const r = await fetch('/api/history');
     const entries = await r.json();
-
     if (!entries.length) {
       el.innerHTML = `
         <div class="jobs-empty">
-          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-          <p>No history yet</p>
-          <span>Your downloads will appear here</span>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2">
+            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+          </svg>
+          <p>No history yet</p><span>Your downloads will appear here</span>
         </div>`;
       return;
     }
-
+    const kindMap = { CLIP: 'kind-clip', FULL: 'kind-full', AUDIO: 'kind-audio' };
     el.innerHTML = entries.map(e => {
       if (!e.kind) return `<div class="history-card"><div class="history-body"><div class="history-name">${esc(e.raw)}</div></div></div>`;
-      const kindMap = { CLIP: 'kind-clip', FULL: 'kind-full' };
-      const kindClass = kindMap[e.kind] || 'kind-full';
       const time = (e.time || '').split(' ')[1] || e.time;
       return `
       <div class="history-card">
-        <span class="history-kind ${kindClass}">${esc(e.kind)}</span>
+        <span class="history-kind ${kindMap[e.kind] || 'kind-full'}">${esc(e.kind)}</span>
         <div class="history-body">
           <div class="history-name">${esc(e.name)}</div>
-          <div class="history-detail">${esc(e.platform)} · ${esc(e.url.slice(0, 60))}${e.url.length > 60 ? '…' : ''}</div>
+          <div class="history-detail">${esc(e.platform)} · ${esc(e.url.slice(0,60))}${e.url.length>60?'…':''}</div>
         </div>
         <span class="history-time">${esc(time)}</span>
       </div>`;
@@ -419,12 +405,269 @@ async function loadHistory() {
 }
 
 /* ═══════════════════════════════════════════════════
+   AUTH — Connect YouTube
+═══════════════════════════════════════════════════ */
+let _authMethod = 'cookies_file';
+
+function setAuthMethod(method) {
+  _authMethod = method;
+  document.querySelectorAll('.auth-method-tab').forEach(tab => {
+    tab.classList.toggle('active', tab.dataset.method === method);
+  });
+  $('auth-panel-cookies')?.classList.toggle('hidden', method !== 'cookies_file');
+  $('auth-panel-browser')?.classList.toggle('hidden', method !== 'browser_cookies');
+  const howText = $('auth-how-it-works-text');
+  if (howText) {
+    howText.textContent = method === 'browser_cookies'
+      ? 'ClipperOS reads cookies from your browser profile via yt-dlp. May not work on Windows with recent Chromium versions.'
+      : 'Export cookies once from your browser. ClipperOS stores the file locally and never exposes cookie values.';
+  }
+}
+
+document.querySelectorAll('.auth-method-tab').forEach(tab => {
+  tab.addEventListener('click', () => setAuthMethod(tab.dataset.method));
+});
+
+function formatCookiesUpdated(iso) {
+  if (!iso) return '';
+  try {
+    return new Date(iso).toLocaleString(undefined, {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: 'numeric', minute: '2-digit',
+    });
+  } catch {
+    return '';
+  }
+}
+
+async function uploadCookies(fileInput, msgEl, onSuccess) {
+  const file = fileInput?.files?.[0];
+  if (!file) {
+    showStatus('auth-msg', 'error', 'Choose a cookies.txt file first.');
+    msgEl?.classList.remove('hidden');
+    return false;
+  }
+
+  showStatus('auth-msg', 'running', 'Uploading cookies and verifying your YouTube session...');
+  msgEl?.classList.remove('hidden');
+
+  const form = new FormData();
+  form.append('cookies', file);
+
+  try {
+    const { response, data: result } = await fetchJson('/api/auth/cookies', { method: 'POST', body: form });
+
+    if (result.connected) {
+      showStatus('auth-msg', 'done', 'YouTube connected. Downloads will use your cookies until they expire.');
+      fileInput.value = '';
+      await onSuccess?.();
+      return true;
+    }
+
+    showStatus('auth-msg', 'error',
+      result.detail || result.error || 'Could not verify your YouTube session. Export fresh cookies and try again.'
+    );
+    return false;
+  } catch (err) {
+    showStatus('auth-msg', 'error', err.message || 'Request failed.');
+    return false;
+  }
+}
+
+async function loadAuthStatus() {
+  const pill         = $('auth-status-pill');
+  const dot          = $('auth-status-dot');
+  const label        = $('auth-status-label');
+  const connState    = $('auth-connected-state');
+  const connDetail   = $('auth-connected-detail');
+  const connForm     = $('auth-connect-form');
+  const refreshPanel = $('auth-refresh-panel');
+  const refreshBtn   = $('btn-refresh-cookies');
+  const browserSel   = $('auth-browser-select');
+  const sidebarDot   = $('sidebar-auth-dot');
+  const howItWorks   = $('auth-how-it-works');
+
+  if (!pill) return;
+
+  try {
+    const { data: status } = await fetchJson('/api/auth/status');
+
+    if (!status.providers) {
+      showStatus(
+        'auth-msg', 'error',
+        'ClipperOS is running an old version. Stop it (Ctrl+C in the terminal), then run: python webapp.py'
+      );
+      $('auth-msg')?.classList.remove('hidden');
+    }
+
+    // Populate browser dropdown
+    if (browserSel && status.browsers && status.browsers.length) {
+      const current = status.browser || '';
+      browserSel.innerHTML = '<option value="">Select a browser...</option>' +
+        status.browsers.map(b =>
+          `<option value="${esc(b.id || b)}" ${(b.id || b) === current ? 'selected' : ''}>${esc(b.label || b)}</option>`
+        ).join('');
+    } else if (browserSel) {
+      browserSel.innerHTML = '<option value="">No browsers detected</option>';
+    }
+
+    if (status.connected) {
+      pill.className = 'auth-status-pill connected';
+      dot.style.background  = 'var(--green)';
+      label.textContent     = 'Connected';
+      connState.classList.remove('hidden');
+      connForm.classList.add('hidden');
+      howItWorks?.classList.add('hidden');
+
+      if (status.provider === 'cookies_file') {
+        const updated = formatCookiesUpdated(status.cookies_updated_at);
+        connDetail.textContent = updated
+          ? `Using cookies.txt · updated ${updated}`
+          : (status.detail || 'Using cookies.txt');
+        refreshBtn?.classList.remove('hidden');
+        refreshPanel?.classList.add('hidden');
+      } else {
+        connDetail.textContent = `Using ${status.browser || 'browser'}${status.profile ? ' · ' + status.profile : ''}`;
+        refreshBtn?.classList.add('hidden');
+        refreshPanel?.classList.add('hidden');
+      }
+
+      if (sidebarDot) sidebarDot.classList.remove('hidden');
+    } else {
+      pill.className = 'auth-status-pill';
+      dot.style.background  = 'var(--text-tertiary)';
+      label.textContent     = 'Not connected';
+      connState.classList.add('hidden');
+      connForm.classList.remove('hidden');
+      refreshPanel?.classList.add('hidden');
+      howItWorks?.classList.remove('hidden');
+
+      const method = status.cookies_configured ? 'cookies_file' : _authMethod;
+      setAuthMethod(method);
+
+      if (sidebarDot) sidebarDot.classList.add('hidden');
+    }
+
+  } catch {
+    if (label) label.textContent = 'Unavailable';
+  }
+}
+
+// Cookies file — connect
+const btnUploadConnect = $('btn-upload-cookies-connect');
+if (btnUploadConnect) {
+  btnUploadConnect.addEventListener('click', async () => {
+    btnUploadConnect.classList.add('loading');
+    btnUploadConnect.textContent = '⏳ Verifying...';
+    try {
+      await uploadCookies($('auth-cookies-file-connect'), $('auth-msg'), loadAuthStatus);
+    } finally {
+      btnUploadConnect.classList.remove('loading');
+      btnUploadConnect.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+        Upload &amp; Connect`;
+    }
+  });
+}
+
+// Cookies file — refresh when connected
+const btnRefreshCookies = $('btn-refresh-cookies');
+if (btnRefreshCookies) {
+  btnRefreshCookies.addEventListener('click', () => {
+    $('auth-refresh-panel')?.classList.toggle('hidden');
+  });
+}
+
+const btnUploadRefresh = $('btn-upload-cookies');
+if (btnUploadRefresh) {
+  btnUploadRefresh.addEventListener('click', async () => {
+    btnUploadRefresh.classList.add('loading');
+    btnUploadRefresh.textContent = '⏳ Verifying...';
+    try {
+      const ok = await uploadCookies($('auth-cookies-file'), $('auth-msg'), loadAuthStatus);
+      if (ok) $('auth-refresh-panel')?.classList.add('hidden');
+    } finally {
+      btnUploadRefresh.classList.remove('loading');
+      btnUploadRefresh.textContent = 'Upload & Verify';
+    }
+  });
+}
+
+// Browser connect button
+const btnConnect = $('btn-connect');
+if (btnConnect) {
+  btnConnect.addEventListener('click', async () => {
+    const browser = $('auth-browser-select')?.value?.trim();
+    const profile = $('auth-profile-input')?.value?.trim() || null;
+    const msgEl   = $('auth-msg');
+
+    if (!browser) {
+      showStatus('auth-msg', 'error', 'Select a browser first.');
+      msgEl.classList.remove('hidden');
+      return;
+    }
+
+    btnConnect.classList.add('loading');
+    btnConnect.textContent = '⏳ Verifying session...';
+    showStatus('auth-msg', 'running', 'Connecting to YouTube via your browser session. This may take a few seconds...');
+    msgEl.classList.remove('hidden');
+
+    try {
+      const { data: result } = await fetchJson('/api/auth/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider: 'browser_cookies', browser, profile }),
+      });
+
+      if (result.connected) {
+        showStatus('auth-msg', 'done', 'YouTube connected successfully. Downloads will now use your browser session.');
+        await loadAuthStatus();
+      } else {
+        showStatus('auth-msg', 'error',
+          result.detail || result.error || 'Could not verify your YouTube session. Try the cookies file method instead.'
+        );
+      }
+    } catch (err) {
+      showStatus('auth-msg', 'error', err.message || 'Request failed.');
+    } finally {
+      btnConnect.classList.remove('loading');
+      btnConnect.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+          <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/>
+          <polyline points="10 17 15 12 10 7"/>
+          <line x1="15" y1="12" x2="3" y2="12"/>
+        </svg>
+        Connect YouTube`;
+    }
+  });
+}
+
+// Disconnect button
+const btnDisconnect = $('btn-disconnect');
+if (btnDisconnect) {
+  btnDisconnect.addEventListener('click', async () => {
+    const msgEl = $('auth-msg');
+    try {
+      await fetch('/api/auth/disconnect', { method: 'POST' });
+      showStatus('auth-msg', 'done', 'Disconnected. ClipperOS will no longer use your YouTube session.');
+      msgEl.classList.remove('hidden');
+      await loadAuthStatus();
+    } catch {
+      showStatus('auth-msg', 'error', 'Disconnect failed. Try restarting ClipperOS.');
+      msgEl.classList.remove('hidden');
+    }
+  });
+}
+
+/* ═══════════════════════════════════════════════════
    UTILS
 ═══════════════════════════════════════════════════ */
 function esc(s) {
   return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;')
+    .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }

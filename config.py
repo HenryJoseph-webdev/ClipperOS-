@@ -5,7 +5,14 @@ APP_NAME    = "ClipperOS"
 APP_VERSION = "1.2"
 
 # ─── Base Download Folder ─────────────────────────────────────────────────────
-BASE_DOWNLOAD_FOLDER = "/storage/emulated/0/Download/ClipperOS"
+BASE_DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "ClipperOS")
+
+PLATFORM_FOLDERS = {
+    "youtube": os.path.join(BASE_DOWNLOAD_FOLDER, "YouTube"),
+    "kick":    os.path.join(BASE_DOWNLOAD_FOLDER, "Kick"),
+    "twitch":  os.path.join(BASE_DOWNLOAD_FOLDER, "Twitch"),
+    "unknown": os.path.join(BASE_DOWNLOAD_FOLDER, "Other"),
+}
 
 # ─── Per-Platform Folders ─────────────────────────────────────────────────────
 PLATFORM_FOLDERS = {

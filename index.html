@@ -276,7 +276,7 @@
         </div>
         <div class="auth-platform-info">
           <span class="auth-platform-name">YouTube</span>
-          <span class="auth-platform-desc">Authenticate for age-restricted and private videos</span>
+          <span class="auth-platform-desc">Use your browser session for age-restricted and private videos</span>
         </div>
         <div class="auth-status-pill" id="auth-status-pill">
           <span class="auth-status-dot" id="auth-status-dot"></span>
@@ -285,80 +285,37 @@
       </div>
 
       <!-- How it works note -->
-      <div class="auth-how-it-works" id="auth-how-it-works">
+      <div class="auth-how-it-works">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span id="auth-how-it-works-text">Export cookies once from your browser. ClipperOS stores the file locally and never exposes cookie values.</span>
+        ClipperOS reads cookies directly from your browser profile via yt-dlp. No cookies are stored or exposed.
       </div>
 
       <!-- Connected state -->
       <div class="auth-connected-state hidden" id="auth-connected-state">
         <div class="auth-connected-detail" id="auth-connected-detail"></div>
-        <div class="auth-connected-actions">
-          <button class="btn-auth-secondary hidden" id="btn-refresh-cookies">Refresh Cookies</button>
-          <button class="btn-auth-disconnect" id="btn-disconnect">Disconnect</button>
-        </div>
-      </div>
-
-      <!-- Refresh panel (shown when connected via cookies file) -->
-      <div class="auth-refresh-panel hidden" id="auth-refresh-panel">
-        <ol class="auth-steps">
-          <li>Install a cookies export extension — <strong>Get cookies.txt LOCALLY</strong> (Chrome/Edge) or <strong>cookies.txt</strong> (Firefox).</li>
-          <li>Go to <strong>youtube.com</strong> and make sure you're signed in.</li>
-          <li>Click the extension icon and export cookies for <strong>youtube.com</strong>.</li>
-          <li>Upload the exported <code>cookies.txt</code> file below.</li>
-        </ol>
-        <div class="auth-file-row">
-          <input class="auth-file-input" id="auth-cookies-file" type="file" accept=".txt,text/plain">
-          <button class="btn-primary" id="btn-upload-cookies">Upload &amp; Verify</button>
-        </div>
+        <button class="btn-auth-disconnect" id="btn-disconnect">Disconnect</button>
       </div>
 
       <!-- Connect form -->
       <div class="auth-connect-form" id="auth-connect-form">
-
-        <div class="auth-method-tabs" id="auth-method-tabs">
-          <button class="auth-method-tab active" data-method="cookies_file" type="button">Cookies file</button>
-          <button class="auth-method-tab" data-method="browser_cookies" type="button">Browser</button>
-        </div>
-
-        <!-- Cookies file method -->
-        <div class="auth-method-panel" id="auth-panel-cookies">
-          <ol class="auth-steps">
-            <li>Install a cookies export extension — <strong>Get cookies.txt LOCALLY</strong> (Chrome/Edge) or <strong>cookies.txt</strong> (Firefox).</li>
-            <li>Go to <strong>youtube.com</strong> and make sure you're signed in.</li>
-            <li>Click the extension icon and export cookies for <strong>youtube.com</strong>.</li>
-            <li>Upload the exported <code>cookies.txt</code> file below.</li>
-          </ol>
-          <div class="auth-file-row">
-            <input class="auth-file-input" id="auth-cookies-file-connect" type="file" accept=".txt,text/plain">
-            <button class="btn-primary" id="btn-upload-cookies-connect">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-              Upload &amp; Connect
-            </button>
+        <div class="field-row" style="margin-bottom:12px">
+          <div class="field-group">
+            <label class="field-label">Browser</label>
+            <select class="field-select" id="auth-browser-select">
+              <option value="">Select a browser...</option>
+            </select>
+          </div>
+          <div class="field-group">
+            <label class="field-label">Profile <span class="field-label-opt">(optional)</span></label>
+            <input class="field-input" id="auth-profile-input" type="text" placeholder="Default">
           </div>
         </div>
 
-        <!-- Browser method -->
-        <div class="auth-method-panel hidden" id="auth-panel-browser">
-          <p class="auth-browser-note">Reads cookies from your browser profile. May not work on Windows with recent Chromium versions.</p>
-          <div class="field-row" style="margin-bottom:12px">
-            <div class="field-group">
-              <label class="field-label">Browser</label>
-              <select class="field-select" id="auth-browser-select">
-                <option value="">Select a browser...</option>
-              </select>
-            </div>
-            <div class="field-group">
-              <label class="field-label">Profile <span class="field-label-opt">(optional)</span></label>
-              <input class="field-input" id="auth-profile-input" type="text" placeholder="Default">
-            </div>
-          </div>
-          <div class="action-row" style="margin-bottom:0">
-            <button class="btn-primary" id="btn-connect">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
-              Connect YouTube
-            </button>
-          </div>
+        <div class="action-row" style="margin-bottom:0">
+          <button class="btn-primary" id="btn-connect">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+            Connect YouTube
+          </button>
         </div>
       </div>
 

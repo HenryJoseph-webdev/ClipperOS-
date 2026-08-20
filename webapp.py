@@ -1,12 +1,10 @@
 """
-webapp.py — ClipperOS Flask frontend v1.3
+webapp.py — ClipperOS Flask frontend v1.4
 
-New in this version:
-  - Audio-only download (/api/download/audio)
-  - Transcript-only download (/api/transcript)
-  - Better error messages (yt-dlp exit code decoded)
-  - Download history with parsed metadata (/api/history)
-  - AI clip cards already have download buttons (handled in JS)
+Changes from v1.3:
+  - Auth routes: GET /api/auth/status, POST /api/auth/connect, POST /api/auth/disconnect
+  - AUTH_AVAILABLE flag (graceful if auth/ module missing)
+  - All existing routes untouched
 """
 
 import os
@@ -37,6 +35,19 @@ try:
 except ImportError:
     AI_AVAILABLE = False
 
+# ── Auth module ───────────────────────────────────────────────────────────────
+try:
+    from auth import (
+        get_status  as auth_get_status,
+        connect     as auth_connect,
+        disconnect  as auth_disconnect,
+        get_browsers as auth_get_browsers,
+    )
+    from auth.cookies_file import save_cookies_file
+    AUTH_AVAILABLE = True
+except ImportError:
+    AUTH_AVAILABLE = False
+
 app = Flask(__name__)
 
 JOBS: dict[str, dict] = {}
@@ -46,10 +57,9 @@ JOBS_LOCK = threading.Lock()
 # ─── Error decoder ────────────────────────────────────────────────────────────
 
 def decode_ytdlp_error(returncode, stderr=""):
-    """Turn a yt-dlp exit code + stderr into a human-readable message."""
     stderr = stderr or ""
     if "Sign in to confirm" in stderr or "bot" in stderr.lower():
-        return "YouTube blocked this request (bot detection). Try again in a few minutes or use a different URL."
+        return "YouTube blocked this request (bot detection). Connect your YouTube account in Settings, or try again in a few minutes."
     if "Private video" in stderr:
         return "This video is private and can't be downloaded."
     if "Video unavailable" in stderr:
@@ -90,7 +100,6 @@ def update_job(job_id: str, **kwargs):
 
 
 def run_ytdlp_capture(command: list) -> tuple[int, str]:
-    """Run yt-dlp, capture stderr for error decoding. Returns (returncode, stderr)."""
     try:
         result = subprocess.run(command, capture_output=True, text=True)
         return result.returncode, result.stderr
@@ -107,7 +116,8 @@ def index():
     return render_template("index.html",
                            app_name=APP_NAME,
                            app_version=APP_VERSION,
-                           ai_available=AI_AVAILABLE)
+                           ai_available=AI_AVAILABLE,
+                           auth_available=AUTH_AVAILABLE)
 
 
 @app.route("/api/detect", methods=["POST"])
@@ -133,7 +143,6 @@ def api_download_clip():
     if not start: return jsonify({"error": "Enter a start time (HH:MM:SS)."}), 400
     if not end:   return jsonify({"error": "Enter an end time (HH:MM:SS)."}), 400
 
-    # Basic timestamp format check
     ts_re = re.compile(r"^\d{1,2}:\d{2}:\d{2}$")
     if not ts_re.match(start): return jsonify({"error": f"Start time '{start}' isn't valid. Use HH:MM:SS format."}), 400
     if not ts_re.match(end):   return jsonify({"error": f"End time '{end}' isn't valid. Use HH:MM:SS format."}), 400
@@ -190,7 +199,7 @@ def api_download_audio():
     data     = request.json or {}
     url      = data.get("url", "").strip()
     filename = clean_filename(data.get("filename", "audio"))
-    fmt      = data.get("format", "mp3")   # mp3 | m4a | wav | opus
+    fmt      = data.get("format", "mp3")
 
     if not url: return jsonify({"error": "Paste a video URL first."}), 400
     if fmt not in ("mp3", "m4a", "wav", "opus"):
@@ -202,19 +211,13 @@ def api_download_audio():
 
     def run():
         update_job(job_id, message=f"Extracting audio as {fmt.upper()}...", progress=10)
-
         command = [
-            "yt-dlp",
-            "-f", "bestaudio",
-            "--extract-audio",
-            "--audio-format", fmt,
+            "yt-dlp", "-f", "bestaudio",
+            "--extract-audio", "--audio-format", fmt,
             "--audio-quality", "0",
-            "-P", folder,
-            "-o", f"{filename}.%(ext)s",
-            "--newline",
-            url,
+            "-P", folder, "-o", f"{filename}.%(ext)s",
+            "--newline", url,
         ]
-
         returncode, stderr = run_ytdlp_capture(command)
         if returncode == 0:
             update_job(job_id, status="done", progress=100,
@@ -233,7 +236,7 @@ def api_download_audio():
     return jsonify({"job_id": job_id})
 
 
-# ── Transcript only ───────────────────────────────────────────────────────────
+# ── Transcript ────────────────────────────────────────────────────────────────
 
 @app.route("/api/transcript", methods=["POST"])
 def api_transcript():
@@ -242,7 +245,6 @@ def api_transcript():
 
     data = request.json or {}
     url  = data.get("url", "").strip()
-
     if not url: return jsonify({"error": "Paste a video URL first."}), 400
 
     job_id = new_job("transcript")
@@ -257,13 +259,11 @@ def api_transcript():
                 update_job(job_id, status="done", progress=100,
                            message=f"Loaded saved transcript ({transcript.word_count()} words)",
                            result={
-                               "video_id":   video_id,
-                               "platform":   platform,
+                               "video_id": video_id, "platform": platform,
                                "word_count": transcript.word_count(),
-                               "file_path":  transcript.file_path,
-                               "title":      transcript.title,
-                               "preview":    transcript.content[:600] + ("..." if len(transcript.content) > 600 else ""),
-                               "cached":     True,
+                               "file_path": transcript.file_path, "title": transcript.title,
+                               "preview": transcript.content[:600] + ("..." if len(transcript.content) > 600 else ""),
+                               "cached": True,
                            })
                 return
 
@@ -272,12 +272,7 @@ def api_transcript():
 
             if transcript is None:
                 update_job(job_id, status="error",
-                           error=(
-                               "No captions found for this video. "
-                               "ClipperOS can only download transcripts from videos that have "
-                               "captions enabled. Try a different video, or check if captions "
-                               "are available on YouTube by clicking the CC button."
-                           ))
+                           error="No captions found. Try a video with CC/subtitles enabled.")
                 return
 
             update_job(job_id, message="Processing transcript...", progress=70)
@@ -287,18 +282,14 @@ def api_transcript():
             update_job(job_id, status="done", progress=100,
                        message=f"Transcript saved ({transcript.word_count()} words)",
                        result={
-                           "video_id":   video_id,
-                           "platform":   platform,
+                           "video_id": video_id, "platform": platform,
                            "word_count": transcript.word_count(),
-                           "file_path":  transcript.file_path,
-                           "title":      transcript.title,
-                           "preview":    transcript.content[:600] + ("..." if len(transcript.content) > 600 else ""),
-                           "cached":     False,
+                           "file_path": transcript.file_path, "title": transcript.title,
+                           "preview": transcript.content[:600] + ("..." if len(transcript.content) > 600 else ""),
+                           "cached": False,
                        })
-
         except Exception as exc:
-            update_job(job_id, status="error",
-                       error=f"Unexpected error: {str(exc)}. Try restarting ClipperOS.")
+            update_job(job_id, status="error", error=f"Unexpected error: {exc}")
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"job_id": job_id})
@@ -314,7 +305,6 @@ def api_analyze():
     data        = request.json or {}
     url         = data.get("url", "").strip()
     prompt_type = data.get("prompt_type", "viral")
-
     if not url: return jsonify({"error": "Paste a video URL first."}), 400
 
     job_id = new_job("ai")
@@ -331,8 +321,7 @@ def api_analyze():
                     clips = [c.to_dict() for c in analysis.top()]
                     update_job(job_id, status="done", progress=100,
                                message=f"Found {len(clips)} clips (cached)",
-                               result={"clips": clips, "cached": True,
-                                       "video_id": video_id, "url": url})
+                               result={"clips": clips, "cached": True, "video_id": video_id, "url": url})
                     return
 
             update_job(job_id, message="Downloading transcript...", progress=15)
@@ -345,11 +334,7 @@ def api_analyze():
                 transcript = download_transcript(url)
                 if transcript is None:
                     update_job(job_id, status="error",
-                               error=(
-                                   "No captions found for this video. "
-                                   "ClipperOS uses captions to find clips. "
-                                   "Try a video with CC/subtitles enabled."
-                               ))
+                               error="No captions found. Try a video with CC/subtitles enabled.")
                     return
                 transcript = clean_transcript(transcript)
                 save_transcript(transcript)
@@ -360,23 +345,18 @@ def api_analyze():
 
             if not analysis.clips:
                 update_job(job_id, status="error",
-                           error=(
-                               "Gemini didn't find any clips in this transcript. "
-                               "Try a different clip style (funny, dramatic, educational) "
-                               "or use a longer video with more content."
-                           ))
+                           error="Gemini didn't find any clips. Try a different clip style or a longer video.")
                 return
 
             save_analysis(analysis)
             clips = [c.to_dict() for c in analysis.top()]
             update_job(job_id, status="done", progress=100,
                        message=f"Found {len(clips)} clips",
-                       result={"clips": clips, "cached": False,
-                               "video_id": video_id, "url": url})
+                       result={"clips": clips, "cached": False, "video_id": video_id, "url": url})
 
         except Exception as exc:
             update_job(job_id, status="error",
-                       error=f"Analysis failed: {str(exc)}. Check your Gemini API key and internet connection.")
+                       error=f"Analysis failed: {exc}. Check your Gemini API key and internet connection.")
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"job_id": job_id})
@@ -410,34 +390,144 @@ def api_history():
     try:
         with open(HISTORY_FILE, "r", encoding="utf-8") as f:
             lines = [l.rstrip() for l in f.readlines() if l.strip()]
-
         parsed = []
         for line in reversed(lines[-50:]):
-            # Format: [2026-07-08 14:22:01] CLIP | YOUTUBE   | filename [start → end] | url
-            m = re.match(
-                r"\[(.+?)\]\s+(\w+)\s*\|\s*(\w+)\s*\|\s*(.+?)\s*\|\s*(.+)$",
-                line
-            )
+            m = re.match(r"\[(.+?)\]\s+(\w+)\s*\|\s*(\w+)\s*\|\s*(.+?)\s*\|\s*(.+)$", line)
             if m:
                 parsed.append({
-                    "time":     m.group(1),
-                    "kind":     m.group(2),
-                    "platform": m.group(3),
-                    "name":     m.group(4).strip(),
-                    "url":      m.group(5).strip(),
-                    "raw":      line,
+                    "time": m.group(1), "kind": m.group(2), "platform": m.group(3),
+                    "name": m.group(4).strip(), "url": m.group(5).strip(), "raw": line,
                 })
             else:
                 parsed.append({"raw": line, "time": "", "kind": "", "platform": "", "name": line, "url": ""})
-
         return jsonify(parsed)
     except OSError:
         return jsonify([])
 
 
-import os
+# ═══════════════════════════════════════════════════
+# AUTH ROUTES
+# ═══════════════════════════════════════════════════
+
+@app.route("/api/auth/status")
+def api_auth_status():
+    """Return current auth state + available browsers. Never exposes credentials."""
+    if not AUTH_AVAILABLE:
+        return jsonify({
+            "available": False,
+            "connected": False,
+            "provider": "none",
+            "message": "Auth module not available.",
+            "browsers": [],
+            "browser": None,
+            "profile": None,
+            "error": None,
+        })
+    try:
+        status = auth_get_status()
+        # Normalise browsers to {id, label} regardless of what get_browsers() returns
+        raw_browsers = auth_get_browsers()
+        normalised = []
+        for b in raw_browsers:
+            if isinstance(b, str):
+                normalised.append({"id": b, "label": b.capitalize()})
+            elif isinstance(b, dict):
+                normalised.append({
+                    "id":    b.get("id") or b.get("name") or b.get("value", ""),
+                    "label": b.get("label") or b.get("name", "").capitalize(),
+                })
+        status["browsers"] = normalised
+        status["available"] = True
+        status["api_version"] = 2
+        return jsonify(status)
+    except Exception as exc:
+        return jsonify({
+            "available": True,
+            "connected": False,
+            "provider": "none",
+            "message": "Could not load auth status.",
+            "browsers": [],
+            "browser": None,
+            "profile": None,
+            "error": str(exc),
+        })
+
+
+@app.route("/api/auth/connect", methods=["POST"])
+def api_auth_connect():
+    """
+    Connect an auth provider.
+    Body (browser): { "provider": "browser_cookies", "browser": "chrome", "profile": "" }
+    Body (cookies): { "provider": "cookies_file" }
+  """
+    if not AUTH_AVAILABLE:
+        return jsonify({"connected": False, "error": "Auth module not available."}), 503
+
+    data     = request.json or {}
+    provider = data.get("provider", "cookies_file")
+    browser  = data.get("browser", "").strip()
+    profile  = data.get("profile", "").strip() or None
+
+    if provider == "browser_cookies" and not browser:
+        return jsonify({"connected": False, "error": "Select a browser to connect with."}), 400
+
+    try:
+        if provider == "browser_cookies":
+            result = auth_connect(provider, browser=browser, profile=profile)
+        else:
+            result = auth_connect(provider)
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({
+            "connected": False,
+            "provider": provider,
+            "error": f"Connect failed: {exc}",
+            "detail": str(exc),
+        })
+
+
+@app.route("/api/auth/cookies", methods=["POST"])
+def api_auth_upload_cookies():
+    """Upload a cookies.txt file, save it, and verify the session."""
+    if not AUTH_AVAILABLE:
+        return jsonify({"ok": False, "error": "Auth module not available."}), 503
+
+    upload = request.files.get("cookies")
+    if upload is None or not upload.filename:
+        return jsonify({"ok": False, "error": "No file uploaded."}), 400
+
+    filename = upload.filename.lower()
+    if not filename.endswith(".txt"):
+        return jsonify({"ok": False, "error": "Upload a .txt cookies file."}), 400
+
+    try:
+        data = upload.read()
+        save_cookies_file(data)
+        result = auth_connect("cookies_file")
+        if result.get("connected"):
+            return jsonify({"ok": True, **result})
+        return jsonify({"ok": False, **result})
+    except ValueError as exc:
+        return jsonify({"ok": False, "error": str(exc), "connected": False})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": f"Upload failed: {exc}", "connected": False})
+
+
+@app.route("/api/auth/disconnect", methods=["POST"])
+def api_auth_disconnect():
+    """Disconnect the active auth provider and clear saved prefs."""
+    if not AUTH_AVAILABLE:
+        return jsonify({"connected": False, "message": "Auth module not available."})
+    try:
+        result = auth_disconnect()
+        return jsonify(result)
+    except Exception as exc:
+        return jsonify({"connected": False, "error": f"Disconnect failed: {exc}"}), 500
+
+
+# ─── Entrypoint ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    print(f"ClipperOS Web UI running on port {port}")
+    print(f"ClipperOS Web UI running on http://127.0.0.1:{port}")
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

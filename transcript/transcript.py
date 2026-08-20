@@ -23,6 +23,8 @@ from typing import Optional
 from config import TRANSCRIPT_FOLDERS, DEBUG
 from models import Transcript
 from utils import detect_platform
+from downloader import redact_command
+from auth import build_auth_args
 
 
 # ─── Internal Helpers ─────────────────────────────────────────────────────────
@@ -143,6 +145,7 @@ def download_transcript(url: str) -> Optional[Transcript]:
 
     command = [
         "yt-dlp",
+        *build_auth_args(),
         "--write-auto-sub",
         "--write-sub",
         "--sub-lang",   "en",
@@ -154,7 +157,7 @@ def download_transcript(url: str) -> Optional[Transcript]:
     ]
 
     if DEBUG:
-        print(f"🐛 transcript command: {' '.join(command)}")
+        print("🐛 transcript command: {}".format(redact_command(command)))
 
     try:
         result = subprocess.run(command, capture_output=True, text=True)
