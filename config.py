@@ -7,14 +7,8 @@ APP_VERSION = "1.2"
 # ─── Base Download Folder ─────────────────────────────────────────────────────
 BASE_DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "ClipperOS")
 
-PLATFORM_FOLDERS = {
-    "youtube": os.path.join(BASE_DOWNLOAD_FOLDER, "YouTube"),
-    "kick":    os.path.join(BASE_DOWNLOAD_FOLDER, "Kick"),
-    "twitch":  os.path.join(BASE_DOWNLOAD_FOLDER, "Twitch"),
-    "unknown": os.path.join(BASE_DOWNLOAD_FOLDER, "Other"),
-}
-
 # ─── Per-Platform Folders ─────────────────────────────────────────────────────
+# (duplicate definition removed — was defined twice identically)
 PLATFORM_FOLDERS = {
     "youtube": os.path.join(BASE_DOWNLOAD_FOLDER, "YouTube"),
     "kick":    os.path.join(BASE_DOWNLOAD_FOLDER, "Kick"),
@@ -39,11 +33,11 @@ QUALITY_MAP = {
 DEFAULT_QUALITY = "1080p"
 
 # ─── Download Behaviour ───────────────────────────────────────────────────────
-MAX_RETRIES      = 2          # how many times to retry a failed download
-MAX_FILENAME_LEN = 80         # characters — truncate anything longer
+MAX_RETRIES      = 2
+MAX_FILENAME_LEN = 80
 
 # ─── Debug ────────────────────────────────────────────────────────────────────
-DEBUG = False                 # set True to print yt-dlp commands + extra errors
+DEBUG = False
 
 # ─── History Log ──────────────────────────────────────────────────────────────
 HISTORY_FILE = os.path.join(BASE_DOWNLOAD_FOLDER, "download_history.log")
@@ -67,9 +61,15 @@ CACHE_FOLDERS = {
 }
 
 # ─── AI ───────────────────────────────────────────────────────────────────────
-GEMINI_API_KEY = "AQ.Ab8RN6I_nutil9exidy3gwsEeGu5hxTLYjR1KCkseUel6arQsw"
+# GEMINI_API_KEY: read from environment variable.
+# To set it: set GEMINI_API_KEY=your_key_here  (Windows CMD)
+#            $env:GEMINI_API_KEY="your_key_here"  (PowerShell)
+#            export GEMINI_API_KEY=your_key_here  (bash/zsh)
+# For development only, you may assign the key directly here,
+# but never commit that value to git or sync it to cloud storage.
+GEMINI_API_KEY   = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL     = "gemini-2.5-flash"
-ANALYSIS_VERSION = 1        # bump this to auto-invalidate all cached analyses
-TOP_CLIPS_COUNT  = 10       # how many clips AI should return
-CHUNK_MINUTES    = 10       # transcript chunk size in minutes
-CHUNK_OVERLAP_SEC = 30      # overlap between chunks (catches cross-boundary moments)
+ANALYSIS_VERSION = 1
+TOP_CLIPS_COUNT  = 10
+CHUNK_MINUTES    = 10
+CHUNK_OVERLAP_SEC = 30

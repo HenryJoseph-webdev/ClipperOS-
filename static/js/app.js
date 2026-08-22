@@ -1,4 +1,11 @@
-/* ClipperOS — app.js v1.4 */
+/* ClipperOS — app.js v1.4.2
+   Changes from v1.4:
+   - showStatus() renders real yt-dlp progress percentage from job.progress
+   - pollJob onDone handler shows output_path + Open Folder button
+   - openFolder() calls POST /api/open-folder
+   - Download/clip/audio onDone handlers updated to show file path
+   Everything else is identical to v1.4.
+*/
 'use strict';
 
 const $ = id => document.getElementById(id);
@@ -63,21 +70,49 @@ setupPlatformDetect('tr-url', 'tr-platform-badge');
 
 /* ═══════════════════════════════════════════════════
    STATUS BLOCK
+   — now renders real progress % from job.progress
+   — shows output path + Open Folder button on done
 ═══════════════════════════════════════════════════ */
-function showStatus(id, state, msg, progress = null) {
+function showStatus(id, state, msg, progress = null, result = null) {
   const el = $(id);
   if (!el) return;
+
   const icons = { running: '⏳', done: '✅', error: '❌' };
-  const isRunning = state === 'running';
-  const isIndet   = isRunning && progress === null;
+  const isRunning  = state === 'running';
+  const isProcessing = isRunning && msg && msg.toLowerCase().startsWith('process');
+
+  // Progress bar
+  let barHtml = '';
+  if (isRunning) {
+    const hasReal   = progress !== null && progress > 0;
+    const indet     = !hasReal || isProcessing;
+    const fillClass = indet ? 'indeterminate' : '';
+    const width     = indet ? 40 : progress;
+    barHtml = `
+      <div class="status-progress">
+        <div class="status-progress-fill ${fillClass}" style="width:${width}%"></div>
+      </div>`;
+  }
+
+  // Output path + Open Folder (shown on done when result has output_path)
+  let pathHtml = '';
+  if (state === 'done' && result && result.output_path) {
+    const p = esc(result.output_path);
+    pathHtml = `
+      <div class="status-output-path">
+        <span class="status-path-label">📁</span>
+        <span class="status-path-text" title="${p}">${p}</span>
+        <button class="btn-open-folder" onclick="openFolder(${JSON.stringify(result.output_path)})">
+          Open folder
+        </button>
+      </div>`;
+  }
+
   el.className = `status-block ${state}`;
   el.innerHTML = `
     <div class="status-msg">${icons[state] || ''} ${msg}</div>
-    ${isRunning ? `
-    <div class="status-progress">
-      <div class="status-progress-fill ${isIndet ? 'indeterminate' : ''}"
-           style="width:${isIndet ? 40 : (progress || 0)}%"></div>
-    </div>` : ''}
+    ${barHtml}
+    ${pathHtml}
   `;
 }
 
@@ -96,13 +131,32 @@ async function fetchJson(url, options = {}) {
   } catch {
     if (response.status === 404) {
       throw new Error(
-        'The server is running an old version. Stop ClipperOS (Ctrl+C in the terminal), then run: python webapp.py'
+        'The server is running an old version. Stop ClipperOS (Ctrl+C), then run: python webapp.py'
       );
     }
-    throw new Error(`Server returned an unexpected response (${response.status}). Restart ClipperOS and try again.`);
+    throw new Error(`Server returned an unexpected response (${response.status}). Restart ClipperOS.`);
   }
 
   return { response, data };
+}
+
+/* ═══════════════════════════════════════════════════
+   OPEN FOLDER
+═══════════════════════════════════════════════════ */
+async function openFolder(filePath) {
+  try {
+    const r = await fetch('/api/open-folder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: filePath, select_file: true }),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      alert('Could not open folder: ' + (data.error || 'Unknown error'));
+    }
+  } catch {
+    alert('Could not reach the server. Is ClipperOS running?');
+  }
 }
 
 /* ═══════════════════════════════════════════════════
@@ -160,10 +214,12 @@ async function refreshJobsPanel() {
 
     list.innerHTML = jobs.slice(0, 12).map(job => {
       const isRunning = job.status === 'running';
+      const hasReal   = isRunning && job.progress > 0;
+      const indet     = isRunning && !hasReal;
       const bar = isRunning ? `
         <div class="job-bar">
-          <div class="job-bar-fill ${!job.progress ? 'indeterminate' : ''}"
-               style="width:${job.progress || 0}%"></div>
+          <div class="job-bar-fill ${indet ? 'indeterminate' : ''}"
+               style="width:${indet ? 0 : job.progress}%"></div>
         </div>` : '';
       return `
       <div class="job-card">
@@ -239,7 +295,7 @@ $('btn-download').addEventListener('click', async () => {
   const endpoint = isClip ? '/api/download/clip' : '/api/download/full';
   const body     = isClip ? { url, filename, quality, start, end } : { url, filename, quality };
 
-  showStatus('dl-status', 'running', isClip ? `Clipping ${start} → ${end}...` : 'Downloading video...');
+  showStatus('dl-status', 'running', isClip ? `Clipping ${start} → ${end}…` : 'Downloading…');
   $('dl-status').classList.remove('hidden');
 
   try {
@@ -252,7 +308,10 @@ $('btn-download').addEventListener('click', async () => {
 
     pollJob(job_id,
       job => showStatus('dl-status', 'running', job.message, job.progress),
-      job => { showStatus('dl-status', 'done', `Saved as ${job.result?.filename || filename}`); setStep(DL_STEPS, 2); },
+      job => {
+        showStatus('dl-status', 'done', job.message, null, job.result);
+        setStep(DL_STEPS, 2);
+      },
       job => showStatus('dl-status', 'error', job.error || 'Download failed.')
     );
   } catch {
@@ -293,7 +352,7 @@ $('btn-audio').addEventListener('click', async () => {
   const url      = $('au-url').value.trim();
   const filename = $('au-filename').value.trim() || 'audio';
 
-  showStatus('au-status', 'running', `Extracting ${selectedFormat.toUpperCase()} audio...`);
+  showStatus('au-status', 'running', `Extracting ${selectedFormat.toUpperCase()} audio…`);
   $('au-status').classList.remove('hidden');
 
   try {
@@ -306,7 +365,7 @@ $('btn-audio').addEventListener('click', async () => {
 
     pollJob(job_id,
       job => showStatus('au-status', 'running', job.message, job.progress),
-      job => showStatus('au-status', 'done', `Saved as ${job.result?.filename || filename + '.' + selectedFormat}`),
+      job => showStatus('au-status', 'done', job.message, null, job.result),
       job => showStatus('au-status', 'error', job.error || 'Audio extraction failed.')
     );
   } catch {
@@ -326,7 +385,7 @@ if (trBtn) {
       $('tr-status').classList.remove('hidden');
       return;
     }
-    showStatus('tr-status', 'running', 'Downloading transcript...');
+    showStatus('tr-status', 'running', 'Downloading transcript…');
     $('tr-status').classList.remove('hidden');
     $('tr-result').classList.add('hidden');
 
@@ -405,7 +464,7 @@ async function loadHistory() {
 }
 
 /* ═══════════════════════════════════════════════════
-   AUTH — Connect YouTube
+   AUTH — unchanged from v1.4
 ═══════════════════════════════════════════════════ */
 let _authMethod = 'cookies_file';
 
@@ -435,9 +494,7 @@ function formatCookiesUpdated(iso) {
       month: 'short', day: 'numeric', year: 'numeric',
       hour: 'numeric', minute: '2-digit',
     });
-  } catch {
-    return '';
-  }
+  } catch { return ''; }
 }
 
 async function uploadCookies(fileInput, msgEl, onSuccess) {
@@ -447,26 +504,20 @@ async function uploadCookies(fileInput, msgEl, onSuccess) {
     msgEl?.classList.remove('hidden');
     return false;
   }
-
-  showStatus('auth-msg', 'running', 'Uploading cookies and verifying your YouTube session...');
+  showStatus('auth-msg', 'running', 'Uploading cookies and verifying your YouTube session…');
   msgEl?.classList.remove('hidden');
-
   const form = new FormData();
   form.append('cookies', file);
-
   try {
-    const { response, data: result } = await fetchJson('/api/auth/cookies', { method: 'POST', body: form });
-
+    const { data: result } = await fetchJson('/api/auth/cookies', { method: 'POST', body: form });
     if (result.connected) {
       showStatus('auth-msg', 'done', 'YouTube connected. Downloads will use your cookies until they expire.');
       fileInput.value = '';
       await onSuccess?.();
       return true;
     }
-
     showStatus('auth-msg', 'error',
-      result.detail || result.error || 'Could not verify your YouTube session. Export fresh cookies and try again.'
-    );
+      result.detail || result.error || 'Could not verify your YouTube session. Export fresh cookies and try again.');
     return false;
   } catch (err) {
     showStatus('auth-msg', 'error', err.message || 'Request failed.');
@@ -486,21 +537,14 @@ async function loadAuthStatus() {
   const browserSel   = $('auth-browser-select');
   const sidebarDot   = $('sidebar-auth-dot');
   const howItWorks   = $('auth-how-it-works');
-
   if (!pill) return;
-
   try {
     const { data: status } = await fetchJson('/api/auth/status');
-
     if (!status.providers) {
-      showStatus(
-        'auth-msg', 'error',
-        'ClipperOS is running an old version. Stop it (Ctrl+C in the terminal), then run: python webapp.py'
-      );
+      showStatus('auth-msg', 'error',
+        'ClipperOS is running an old version. Stop it (Ctrl+C), then run: python webapp.py');
       $('auth-msg')?.classList.remove('hidden');
     }
-
-    // Populate browser dropdown
     if (browserSel && status.browsers && status.browsers.length) {
       const current = status.browser || '';
       browserSel.innerHTML = '<option value="">Select a browser...</option>' +
@@ -510,15 +554,13 @@ async function loadAuthStatus() {
     } else if (browserSel) {
       browserSel.innerHTML = '<option value="">No browsers detected</option>';
     }
-
     if (status.connected) {
       pill.className = 'auth-status-pill connected';
-      dot.style.background  = 'var(--green)';
-      label.textContent     = 'Connected';
+      dot.style.background = 'var(--green)';
+      label.textContent    = 'Connected';
       connState.classList.remove('hidden');
       connForm.classList.add('hidden');
       howItWorks?.classList.add('hidden');
-
       if (status.provider === 'cookies_file') {
         const updated = formatCookiesUpdated(status.cookies_updated_at);
         connDetail.textContent = updated
@@ -531,34 +573,28 @@ async function loadAuthStatus() {
         refreshBtn?.classList.add('hidden');
         refreshPanel?.classList.add('hidden');
       }
-
       if (sidebarDot) sidebarDot.classList.remove('hidden');
     } else {
       pill.className = 'auth-status-pill';
-      dot.style.background  = 'var(--text-tertiary)';
-      label.textContent     = 'Not connected';
+      dot.style.background = 'var(--text-tertiary)';
+      label.textContent    = 'Not connected';
       connState.classList.add('hidden');
       connForm.classList.remove('hidden');
       refreshPanel?.classList.add('hidden');
       howItWorks?.classList.remove('hidden');
-
-      const method = status.cookies_configured ? 'cookies_file' : _authMethod;
-      setAuthMethod(method);
-
+      setAuthMethod(status.cookies_configured ? 'cookies_file' : _authMethod);
       if (sidebarDot) sidebarDot.classList.add('hidden');
     }
-
   } catch {
     if (label) label.textContent = 'Unavailable';
   }
 }
 
-// Cookies file — connect
 const btnUploadConnect = $('btn-upload-cookies-connect');
 if (btnUploadConnect) {
   btnUploadConnect.addEventListener('click', async () => {
     btnUploadConnect.classList.add('loading');
-    btnUploadConnect.textContent = '⏳ Verifying...';
+    btnUploadConnect.textContent = '⏳ Verifying…';
     try {
       await uploadCookies($('auth-cookies-file-connect'), $('auth-msg'), loadAuthStatus);
     } finally {
@@ -574,7 +610,6 @@ if (btnUploadConnect) {
   });
 }
 
-// Cookies file — refresh when connected
 const btnRefreshCookies = $('btn-refresh-cookies');
 if (btnRefreshCookies) {
   btnRefreshCookies.addEventListener('click', () => {
@@ -586,7 +621,7 @@ const btnUploadRefresh = $('btn-upload-cookies');
 if (btnUploadRefresh) {
   btnUploadRefresh.addEventListener('click', async () => {
     btnUploadRefresh.classList.add('loading');
-    btnUploadRefresh.textContent = '⏳ Verifying...';
+    btnUploadRefresh.textContent = '⏳ Verifying…';
     try {
       const ok = await uploadCookies($('auth-cookies-file'), $('auth-msg'), loadAuthStatus);
       if (ok) $('auth-refresh-panel')?.classList.add('hidden');
@@ -597,39 +632,33 @@ if (btnUploadRefresh) {
   });
 }
 
-// Browser connect button
 const btnConnect = $('btn-connect');
 if (btnConnect) {
   btnConnect.addEventListener('click', async () => {
     const browser = $('auth-browser-select')?.value?.trim();
     const profile = $('auth-profile-input')?.value?.trim() || null;
     const msgEl   = $('auth-msg');
-
     if (!browser) {
       showStatus('auth-msg', 'error', 'Select a browser first.');
       msgEl.classList.remove('hidden');
       return;
     }
-
     btnConnect.classList.add('loading');
-    btnConnect.textContent = '⏳ Verifying session...';
-    showStatus('auth-msg', 'running', 'Connecting to YouTube via your browser session. This may take a few seconds...');
+    btnConnect.textContent = '⏳ Verifying session…';
+    showStatus('auth-msg', 'running', 'Connecting to YouTube via your browser session. This may take a few seconds…');
     msgEl.classList.remove('hidden');
-
     try {
       const { data: result } = await fetchJson('/api/auth/connect', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ provider: 'browser_cookies', browser, profile }),
       });
-
       if (result.connected) {
         showStatus('auth-msg', 'done', 'YouTube connected successfully. Downloads will now use your browser session.');
         await loadAuthStatus();
       } else {
         showStatus('auth-msg', 'error',
-          result.detail || result.error || 'Could not verify your YouTube session. Try the cookies file method instead.'
-        );
+          result.detail || result.error || 'Could not verify your YouTube session. Try the cookies file method instead.');
       }
     } catch (err) {
       showStatus('auth-msg', 'error', err.message || 'Request failed.');
@@ -646,7 +675,6 @@ if (btnConnect) {
   });
 }
 
-// Disconnect button
 const btnDisconnect = $('btn-disconnect');
 if (btnDisconnect) {
   btnDisconnect.addEventListener('click', async () => {

@@ -1385,3 +1385,45 @@ body {
     padding-bottom: 80px; /* always clear bottom nav */
   }
 }
+
+.status-output-path {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: rgba(0,0,0,0.04);
+  border-radius: var(--radius);
+  flex-wrap: wrap;
+}
+
+.status-path-label {
+  flex-shrink: 0;
+  font-size: 13px;
+}
+
+.status-path-text {
+  flex: 1;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-secondary);
+  word-break: break-all;
+  min-width: 0;
+}
+
+.btn-open-folder {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  background: var(--text-primary);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.btn-open-folder:hover { opacity: 0.85; }
