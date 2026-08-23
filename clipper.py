@@ -9,12 +9,25 @@ from transcript.transcript import (
     save_transcript, load_transcript,
     delete_transcript, transcript_exists,
 )
-from cache.cache import (
-    load_analysis, save_analysis,
-    is_stale, delete_analysis,
-)
-from ai.ai import analyze_transcript
-from ai.prompts import PROMPT_TYPES, DEFAULT_PROMPT_TYPE
+CACHE_AVAILABLE = False
+AI_AVAILABLE = False
+
+try:
+    from cache.cache import (
+        load_analysis, save_analysis,
+        is_stale, delete_analysis,
+    )
+    CACHE_AVAILABLE = True
+except ImportError:
+    pass
+
+try:
+    from ai.ai import analyze_transcript
+    from ai.prompts import PROMPT_TYPES, DEFAULT_PROMPT_TYPE
+    AI_AVAILABLE = CACHE_AVAILABLE
+except ImportError:
+    PROMPT_TYPES = {}
+    DEFAULT_PROMPT_TYPE = "viral"
 
 
 # ─── Banner ───────────────────────────────────────────────────────────────────
@@ -126,6 +139,11 @@ def show_clips(clips) -> None:
 
 
 def ai_clip_finder():
+    if not AI_AVAILABLE:
+        print("\nAI clip finder is unavailable until its cache implementation is restored.\n")
+        input("Press Enter to return to menu...")
+        return
+
     url      = get_url()
     platform = detect_platform(url)
 
@@ -260,7 +278,8 @@ def transcript_manager():
         from transcript.transcript import _extract_video_id
         video_id = _extract_video_id(url)
         delete_transcript(video_id, platform)
-        delete_analysis(video_id, platform)
+        if CACHE_AVAILABLE:
+            delete_analysis(video_id, platform)
         input("\n↩️  Press Enter to continue...")
 
 

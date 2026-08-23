@@ -17,14 +17,20 @@ import sys
 import threading
 import uuid
 from datetime import datetime
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, redirect, request
 
 CLIPPER_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, CLIPPER_ROOT)
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://127.0.0.1:3000").rstrip("/")
 
-from config import APP_NAME, APP_VERSION, HISTORY_FILE, DEFAULT_QUALITY, BASE_DOWNLOAD_FOLDER
+from config import (APP_NAME, APP_VERSION, HISTORY_FILE, DEFAULT_QUALITY,
+                    BASE_DOWNLOAD_FOLDER, AI_PROVIDER, AI_MODEL,
+                    GEMINI_API_KEY, OPENROUTER_API_KEY)
 from downloader import download_full, download_clip, _run_with_ydl, _base_opts
 from utils import detect_platform, clean_filename, ensure_platform_folder
+
+TRANSCRIPT_AVAILABLE = False
+AI_AVAILABLE = False
 
 try:
     from transcript.transcript import (
@@ -32,11 +38,16 @@ try:
         save_transcript, load_transcript,
         transcript_exists, _extract_video_id,
     )
+    TRANSCRIPT_AVAILABLE = True
+except ImportError:
+    pass
+
+try:
     from cache.cache import load_analysis, save_analysis, is_stale
     from ai.ai import analyze_transcript
-    AI_AVAILABLE = True
+    AI_AVAILABLE = TRANSCRIPT_AVAILABLE
 except ImportError:
-    AI_AVAILABLE = False
+    pass
 
 # ── Auth module ───────────────────────────────────────────────────────────────
 AUTH_AVAILABLE     = False
@@ -89,16 +100,16 @@ def decode_ytdlp_error(returncode: int, stderr: str = "", detail: str = "") -> s
         return (f"That quality isn't available. Try 720p instead."
                 f"{(' (' + detail[:120] + ')') if detail else ''}")
     if "ffmpeg" in combined and ("not found" in combined or "not install" in combined):
-        return "ffmpeg is not installed or not on PATH. Install it and restart ClipperOS."
+        return "Audio processing is unavailable. Check the media tools installation and restart ClipperOS."
     if returncode == 1 and detail:
         return f"Download failed: {detail[:300]}"
     if returncode == 1:
-        return "yt-dlp couldn't download this video. Check the URL is correct and the video is public."
+        return "The video couldn't be downloaded. Check that the URL is correct and the video is public."
     if returncode == 2:
-        return "Bad options passed to yt-dlp. This is a ClipperOS bug — please report it."
+        return "The download options were invalid. Please try again."
     if detail:
         return f"Download failed (exit {returncode}): {detail[:300]}"
-    return f"Download failed (yt-dlp exit code {returncode}). Try a different quality or URL."
+    return "Download failed. Try a different quality or URL."
 
 
 # ─── Job helpers ──────────────────────────────────────────────────────────────
@@ -139,11 +150,7 @@ def run_ytdlp_capture(command: list) -> tuple[int, str]:
 
 @app.route("/")
 def index():
-    return render_template("index.html",
-                           app_name=APP_NAME,
-                           app_version=APP_VERSION,
-                           ai_available=AI_AVAILABLE,
-                           auth_available=AUTH_AVAILABLE)
+    return redirect(FRONTEND_URL)
 
 
 @app.route("/api/detect", methods=["POST"])
@@ -314,9 +321,9 @@ def api_download_audio():
             code   = result.returncode if result else -1
             detail = result.stderr if result and result.stderr else ""
             if "ffmpeg" in detail.lower():
-                msg = "ffmpeg is required for audio extraction. Install it and restart ClipperOS."
+                msg = "Audio extraction is unavailable. Check the media tools installation and restart ClipperOS."
             elif code == -1 and "not installed" in detail:
-                msg = "yt-dlp is not installed. Run: pip install yt-dlp"
+                msg = "The download service is unavailable. Check the installation and restart ClipperOS."
             else:
                 msg = decode_ytdlp_error(code, detail=detail)
             update_job(job_id, status="error", error=msg, detail=detail)
@@ -380,15 +387,15 @@ def api_open_folder():
         return jsonify({"ok": True})
 
     except Exception as exc:
-        return jsonify({"ok": False, "error": str(exc)}), 500
+        return jsonify({"ok": False, "error": "Could not open the download folder."}), 500
 
 
 # ── Transcript ────────────────────────────────────────────────────────────────
 
 @app.route("/api/transcript", methods=["POST"])
 def api_transcript():
-    if not AI_AVAILABLE:
-        return jsonify({"error": "Transcript module not available."}), 503
+    if not TRANSCRIPT_AVAILABLE:
+        return jsonify({"error": "Transcript service is currently unavailable."}), 503
     data = request.json or {}
     url  = data.get("url", "").strip()
     if not url: return jsonify({"error": "Paste a video URL first."}), 400
@@ -425,7 +432,7 @@ def api_transcript():
                                "preview": transcript.content[:600] + ("..." if len(transcript.content) > 600 else ""),
                                "cached": False})
         except Exception as exc:
-            update_job(job_id, status="error", error=f"Unexpected error: {exc}")
+            update_job(job_id, status="error", error="Transcript processing failed. Please try again.")
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"job_id": job_id})
@@ -436,10 +443,12 @@ def api_transcript():
 @app.route("/api/analyze", methods=["POST"])
 def api_analyze():
     if not AI_AVAILABLE:
-        return jsonify({"error": "AI module unavailable. Make sure GEMINI_API_KEY is set."}), 503
+        return jsonify({"error": "AI module unavailable. Check the configured AI provider and credentials."}), 503
     data        = request.json or {}
     url         = data.get("url", "").strip()
-    prompt_type = data.get("prompt_type", "viral")
+    # ``category`` is the first-class AI Analytics contract. Keep accepting
+    # the older prompt_type name for existing clients.
+    prompt_type = str(data.get("category") or data.get("prompt_type") or "interesting").strip().lower()
     if not url: return jsonify({"error": "Paste a video URL first."}), 400
     job_id = new_job("ai")
 
@@ -447,14 +456,19 @@ def api_analyze():
         try:
             platform = detect_platform(url)
             video_id = _extract_video_id(url)
-            if not is_stale(video_id, platform):
+            # Historical cache files predate category-aware analysis. Only
+            # reuse them for the legacy viral mode; every Analytics category
+            # must receive a fresh category-specific Gemini prompt. The
+            # transcript cache below remains shared by all categories.
+            if prompt_type == "viral" and not is_stale(video_id, platform):
                 update_job(job_id, message="Loading cached analysis...", progress=30)
                 analysis = load_analysis(video_id, platform)
                 if analysis and analysis.clips:
                     clips = [c.to_dict() for c in analysis.top()]
                     update_job(job_id, status="done", progress=100,
                                message=f"Found {len(clips)} clips (cached)",
-                               result={"clips": clips, "cached": True, "video_id": video_id, "url": url})
+                               result={"clips": clips, "cached": True, "category": prompt_type,
+                                       "video_id": video_id, "url": url})
                     return
             update_job(job_id, message="Downloading transcript...", progress=15)
             transcript = None
@@ -470,20 +484,37 @@ def api_analyze():
                 transcript = clean_transcript(transcript)
                 save_transcript(transcript)
                 update_job(job_id, message=f"Transcript ready ({transcript.word_count()} words).", progress=35)
-            update_job(job_id, message=f"Analyzing with Gemini [{prompt_type}]...", progress=40)
+            update_job(job_id, message=f"Analyzing transcript [{prompt_type}]...", progress=40)
             analysis = analyze_transcript(transcript, prompt_type=prompt_type)
             if not analysis.clips:
+                failures = [response for response in analysis.chunk_responses if response.error]
+                if failures:
+                    priority = {"quota": 0, "authentication": 1, "provider": 2,
+                                "network": 3, "http": 4, "parse": 5}
+                    failure = sorted(failures, key=lambda item: priority.get(item.error_kind, 99))[0]
+                    messages = {
+                        "quota": "AI usage is temporarily unavailable. Try again later.",
+                        "authentication": "AI analysis is not configured correctly. Check the app credentials.",
+                        "provider": "AI analysis is currently unavailable. Try again later.",
+                        "network": "Could not reach the AI service. Check the network connection and try again.",
+                        "http": "The AI service returned an error. Try again later.",
+                        "parse": "The AI service returned a response that could not be processed.",
+                    }
+                    update_job(job_id, status="error", error=messages.get(failure.error_kind, failure.error),
+                               error_kind=failure.error_kind, error_status=failure.http_status)
+                    return
                 update_job(job_id, status="error",
-                           error="Gemini didn't find any clips. Try a different clip style or a longer video.")
+                           error="No clips were found. Try a different category or a longer captioned video.")
                 return
             save_analysis(analysis)
             clips = [c.to_dict() for c in analysis.top()]
             update_job(job_id, status="done", progress=100,
                        message=f"Found {len(clips)} clips",
-                       result={"clips": clips, "cached": False, "video_id": video_id, "url": url})
+                       result={"clips": clips, "cached": False, "category": prompt_type,
+                               "video_id": video_id, "url": url})
         except Exception as exc:
             update_job(job_id, status="error",
-                       error=f"Analysis failed: {exc}. Check your Gemini API key and internet connection.")
+                       error=f"Analysis failed: {exc}. Check the configured AI provider and internet connection.")
 
     threading.Thread(target=run, daemon=True).start()
     return jsonify({"job_id": job_id})
@@ -538,7 +569,7 @@ def api_history():
 def api_auth_status():
     if not AUTH_AVAILABLE:
         return jsonify({"available": False, "connected": False, "provider": "none",
-                        "message": "Auth module not available.", "browsers": [],
+                        "message": "Authentication is currently unavailable.", "browsers": [],
                         "browser": None, "profile": None, "error": None})
     try:
         status = _auth_get_status()
@@ -563,7 +594,7 @@ def api_auth_status():
 @app.route("/api/auth/connect", methods=["POST"])
 def api_auth_connect():
     if not AUTH_AVAILABLE:
-        return jsonify({"connected": False, "error": "Auth module not available."}), 503
+        return jsonify({"connected": False, "error": "Authentication is currently unavailable."}), 503
     data     = request.json or {}
     provider = data.get("provider", "cookies_file")
     browser  = data.get("browser", "").strip()
@@ -583,9 +614,9 @@ def api_auth_connect():
 @app.route("/api/auth/cookies", methods=["POST"])
 def api_auth_upload_cookies():
     if not AUTH_AVAILABLE:
-        return jsonify({"ok": False, "error": "Auth module not available."}), 503
+        return jsonify({"ok": False, "error": "Authentication is currently unavailable."}), 503
     if _save_cookies_file is None:
-        return jsonify({"ok": False, "error": "Cookie upload helper not available."}), 503
+        return jsonify({"ok": False, "error": "Cookie upload is currently unavailable."}), 503
     upload = request.files.get("cookies")
     if upload is None or not upload.filename:
         return jsonify({"ok": False, "error": "No file uploaded."}), 400
@@ -605,16 +636,18 @@ def api_auth_upload_cookies():
 @app.route("/api/auth/disconnect", methods=["POST"])
 def api_auth_disconnect():
     if not AUTH_AVAILABLE:
-        return jsonify({"connected": False, "message": "Auth module not available."})
+        return jsonify({"connected": False, "message": "Authentication is currently unavailable."})
     try:
         return jsonify(_auth_disconnect())
     except Exception as exc:
-        return jsonify({"connected": False, "error": f"Disconnect failed: {exc}"}), 500
+        return jsonify({"connected": False, "error": "Could not disconnect authentication."}), 500
 
 
 # ─── Entrypoint ───────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
+    selected_key = OPENROUTER_API_KEY if AI_PROVIDER == "openrouter" else GEMINI_API_KEY
+    print(f"AI runtime: provider={AI_PROVIDER}, model={AI_MODEL}, key_configured={bool(selected_key)}")
     print(f"ClipperOS Web UI running on http://127.0.0.1:{port}")
     app.run(host="0.0.0.0", port=port, debug=False, threaded=True)

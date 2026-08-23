@@ -69,6 +69,12 @@ CACHE_FOLDERS = {
 # but never commit that value to git or sync it to cloud storage.
 GEMINI_API_KEY   = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL     = "gemini-2.5-flash"
+AI_PROVIDER      = os.environ.get("AI_PROVIDER", "gemini").strip().lower()
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "").strip()
+OPENROUTER_MODEL = os.environ.get(
+    "OPENROUTER_MODEL", "deepseek/deepseek-v4-flash-0731"
+)
+AI_MODEL = OPENROUTER_MODEL if AI_PROVIDER == "openrouter" else GEMINI_MODEL
 ANALYSIS_VERSION = 1
 TOP_CLIPS_COUNT  = 10
 CHUNK_MINUTES    = 10

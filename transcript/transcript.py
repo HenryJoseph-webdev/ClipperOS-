@@ -17,6 +17,7 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import tempfile
 from datetime import datetime
 from typing import Optional
 
@@ -136,12 +137,19 @@ def download_transcript(url: str) -> Optional[Transcript]:
 
     print(f"\n📄 Fetching transcript  [{video_id}  {platform}]...")
 
-    # Write subtitle files to a temp subfolder so we can find them reliably
-    tmp_dir = os.path.join(
-        TRANSCRIPT_FOLDERS.get(platform, TRANSCRIPT_FOLDERS["unknown"]),
-        f"_tmp_{video_id}",
-    )
-    os.makedirs(tmp_dir, exist_ok=True)
+    # Do not create transcript paths for unsupported or malformed input. A
+    # host-only value such as 192.168.1.10:5000 is not a media URL; treating
+    # its fallback segment as a video ID would create an invalid Windows path.
+    if platform == "unknown":
+        print("Unsupported media URL; cannot fetch captions.")
+        return None
+
+    # Use an OS-generated name rather than incorporating user input into a
+    # filesystem path. This preserves the transcript layout and avoids path
+    # traversal and platform-specific filename characters.
+    transcript_folder = TRANSCRIPT_FOLDERS[platform]
+    os.makedirs(transcript_folder, exist_ok=True)
+    tmp_dir = tempfile.mkdtemp(prefix="_tmp_", dir=transcript_folder)
 
     command = [
         "yt-dlp",

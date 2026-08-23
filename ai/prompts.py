@@ -87,6 +87,23 @@ Return this exact JSON structure:
 {_SHARED_RULES}"""
 
 
+def interesting_clips(transcript_chunk: str, chunk_index: int, total_chunks: int) -> str:
+    """Find surprising, unusual, fascinating, or highly engaging moments."""
+    context = f"(Chunk {chunk_index + 1} of {total_chunks})" if total_chunks > 1 else ""
+    return f"""You are an expert content editor finding the most interesting moments in long-form video.
+
+Analyze this transcript {context} and find the {TOP_CLIPS_COUNT} most surprising, unusual, fascinating, controversial, or highly engaging moments.
+
+Look for unexpected facts, revelations, twists, unusual stories, compelling disagreements, and moments that create curiosity.
+
+Transcript:
+{transcript_chunk}
+
+Return this exact JSON structure:
+{_CLIP_SCHEMA}
+{_SHARED_RULES}"""
+
+
 def funny_clips(transcript_chunk: str, chunk_index: int, total_chunks: int) -> str:
     """
     Comedy-focused prompt. Prioritises laughs over raw virality.
@@ -148,6 +165,23 @@ Return this exact JSON structure:
 {_SHARED_RULES}"""
 
 
+def scary_clips(transcript_chunk: str, chunk_index: int, total_chunks: int) -> str:
+    """Find disturbing, frightening, tense, creepy, shocking, or unsettling moments."""
+    context = f"(Chunk {chunk_index + 1} of {total_chunks})" if total_chunks > 1 else ""
+    return f"""You are an editor finding the most frightening and unsettling moments in video.
+
+Analyze this transcript {context} and find the {TOP_CLIPS_COUNT} most disturbing, frightening, tense, creepy, shocking, or unsettling moments.
+
+Look for danger, genuine fear, creepy stories, disturbing discoveries, ominous details, sudden shocks, and escalating tension.
+
+Transcript:
+{transcript_chunk}
+
+Return this exact JSON structure:
+{_CLIP_SCHEMA}
+{_SHARED_RULES}"""
+
+
 def dramatic_clips(transcript_chunk: str, chunk_index: int, total_chunks: int) -> str:
     """
     Drama / tension-focused prompt.
@@ -187,9 +221,11 @@ Return this exact JSON structure:
 
 PROMPT_TYPES: dict[str, callable] = {
     "viral":       viral_clips,
+    "interesting": interesting_clips,
     "funny":       funny_clips,
     "educational": educational_clips,
     "dramatic":    dramatic_clips,
+    "scary":       scary_clips,
 }
 
 DEFAULT_PROMPT_TYPE = "viral"

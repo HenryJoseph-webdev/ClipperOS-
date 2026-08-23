@@ -104,6 +104,7 @@ def ask_gemini(prompt: str, chunk_index: int = 0) -> AIResponse:
     if not config.GEMINI_API_KEY:
         return AIResponse(
             chunk_index = chunk_index,
+            error_kind  = "authentication",
             error       = "GEMINI_API_KEY is not set. "
                           "Export it with: export GEMINI_API_KEY=your_key_here",
         )
@@ -141,26 +142,41 @@ def ask_gemini(prompt: str, chunk_index: int = 0) -> AIResponse:
 
     except urllib.error.HTTPError as exc:
         body_text = exc.read().decode("utf-8", errors="replace")
-        error_msg = f"HTTP {exc.code}: {body_text[:200]}"
+        if exc.code == 429:
+            error_kind = "quota"
+            error_msg = "Gemini quota or rate limit exceeded (HTTP 429)."
+        elif exc.code in (401, 403):
+            error_kind = "authentication"
+            error_msg = f"Gemini authentication failed (HTTP {exc.code})."
+        elif 500 <= exc.code <= 599:
+            error_kind = "provider"
+            error_msg = f"Gemini provider error (HTTP {exc.code})."
+        else:
+            error_kind = "http"
+            error_msg = f"Gemini HTTP error (HTTP {exc.code})."
         if config.DEBUG:
             print(f"🐛 Gemini HTTP error: {error_msg}")
-        return AIResponse(chunk_index=chunk_index, error=error_msg)
+        return AIResponse(chunk_index=chunk_index, error=error_msg,
+                          error_kind=error_kind, http_status=exc.code)
 
     except urllib.error.URLError as exc:
         return AIResponse(
             chunk_index = chunk_index,
+            error_kind  = "network",
             error       = f"Network error: {exc.reason}",
         )
 
     except TimeoutError:
         return AIResponse(
             chunk_index = chunk_index,
+            error_kind  = "provider",
             error       = "Request timed out after 60 s.",
         )
 
     except Exception as exc:
         return AIResponse(
             chunk_index = chunk_index,
+            error_kind  = "provider",
             error       = f"Unexpected error: {exc}",
         )
 
@@ -180,6 +196,70 @@ def ask_gemini(prompt: str, chunk_index: int = 0) -> AIResponse:
 
 # ─── Response Parsing ─────────────────────────────────────────────────────────
 
+def ask_openrouter(prompt: str, chunk_index: int = 0) -> AIResponse:
+    """Send one prompt to the configured OpenRouter model."""
+    if not config.OPENROUTER_API_KEY:
+        return AIResponse(chunk_index=chunk_index, error_kind="authentication",
+                          error="OPENROUTER_API_KEY is not set.")
+    payload = json.dumps({
+        "model": config.OPENROUTER_MODEL,
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.3,
+        "max_tokens": 4096,
+        "reasoning": {"effort": "none", "exclude": True},
+        "response_format": {"type": "json_object"},
+    }).encode("utf-8")
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions", data=payload,
+        headers={"Authorization": "Bearer " + config.OPENROUTER_API_KEY,
+                 "Content-Type": "application/json"}, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=90) as resp:
+            body = json.loads(resp.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        body_text = exc.read().decode("utf-8", errors="replace")
+        if exc.code == 429:
+            kind, message = "quota", "OpenRouter quota or rate limit exceeded (HTTP 429)."
+        elif exc.code in (401, 403):
+            kind, message = "authentication", f"OpenRouter authentication failed (HTTP {exc.code})."
+        elif 500 <= exc.code <= 599:
+            kind, message = "provider", f"OpenRouter provider error (HTTP {exc.code})."
+        else:
+            kind, message = "http", f"OpenRouter HTTP error (HTTP {exc.code}): {body_text[:200]}"
+        return AIResponse(chunk_index=chunk_index, error_kind=kind,
+                          error=message, http_status=exc.code)
+    except urllib.error.URLError as exc:
+        return AIResponse(chunk_index=chunk_index, error_kind="network",
+                          error=f"OpenRouter network error: {exc.reason}")
+    except TimeoutError:
+        return AIResponse(chunk_index=chunk_index, error_kind="provider",
+                          error="OpenRouter request timed out after 90 s.")
+    except Exception as exc:
+        return AIResponse(chunk_index=chunk_index, error_kind="provider",
+                          error=f"Unexpected OpenRouter error: {exc}")
+    try:
+        content = body["choices"][0]["message"]["content"]
+        if isinstance(content, list):
+            content = "".join(part.get("text", "") for part in content
+                               if isinstance(part, dict))
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError("OpenRouter response content was empty")
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        return AIResponse(chunk_index=chunk_index, error_kind="provider",
+                          error=f"OpenRouter response did not contain usable message content: {exc}")
+    return AIResponse(chunk_index=chunk_index, raw_json=content)
+
+
+def ask_ai(prompt: str, chunk_index: int = 0) -> AIResponse:
+    """Dispatch one prompt to the configured AI provider."""
+    if config.AI_PROVIDER == "gemini":
+        return ask_gemini(prompt, chunk_index)
+    if config.AI_PROVIDER == "openrouter":
+        return ask_openrouter(prompt, chunk_index)
+    return AIResponse(chunk_index=chunk_index, error_kind="provider",
+                      error=f"Unsupported AI_PROVIDER: {config.AI_PROVIDER}")
+
+
 def parse_response(response: AIResponse) -> list[Clip]:
     """
     Parse Gemini's raw JSON string into a list of Clip objects.
@@ -196,6 +276,7 @@ def parse_response(response: AIResponse) -> list[Clip]:
     raw = response.raw_json.strip()
 
     if not raw:
+        response.error_kind = "parse"
         response.error = "Empty response from Gemini."
         return []
 
@@ -210,6 +291,7 @@ def parse_response(response: AIResponse) -> list[Clip]:
     try:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
+        response.error_kind = "parse"
         response.error = f"JSON parse error: {exc}. Raw: {raw[:200]}"
         if config.DEBUG:
             print(f"🐛 {response.error}")
@@ -217,6 +299,7 @@ def parse_response(response: AIResponse) -> list[Clip]:
 
     raw_clips = data.get("clips", [])
     if not isinstance(raw_clips, list):
+        response.error_kind = "parse"
         response.error = "Response JSON did not contain a 'clips' list."
         return []
 
@@ -322,7 +405,7 @@ def analyze_transcript(
         print("⚠️  Transcript is empty — nothing to analyze.")
         return Analysis(
             analysis_version = config.ANALYSIS_VERSION,
-            ai_model         = config.GEMINI_MODEL,
+            ai_model         = config.AI_MODEL,
             video_id         = transcript.video_id,
             platform         = transcript.platform,
         )
@@ -335,7 +418,7 @@ def analyze_transcript(
         print(f"   Chunk {i + 1}/{total_chunks}  ({len(chunk.splitlines())} lines)...")
 
         prompt   = get_prompt(prompt_type, chunk, chunk_index=i, total_chunks=total_chunks)
-        response = ask_gemini(prompt, chunk_index=i)
+        response = ask_ai(prompt, chunk_index=i)
 
         if response.error:
             print(f"   ⚠️  Chunk {i + 1} error: {response.error}")
@@ -357,7 +440,7 @@ def analyze_transcript(
 
     return Analysis(
         analysis_version = config.ANALYSIS_VERSION,
-        ai_model         = config.GEMINI_MODEL,
+        ai_model         = config.AI_MODEL,
         video_id         = transcript.video_id,
         platform         = transcript.platform,
         analyzed_at      = datetime.now(),

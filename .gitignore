@@ -33,3 +33,5 @@ __pycache__/
 # Temporary Playwright scripts
 export_cookies_playwright.py
 interactive_playwright_auth.py
+
+tools/benchmark_output/

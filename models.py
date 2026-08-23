@@ -167,6 +167,8 @@ class AIResponse:
     raw_json:    str                   = ""
     clips:       list[Clip]            = field(default_factory=list)
     error:       str                   = ""
+    error_kind:  str                   = ""
+    http_status: Optional[int]         = None
 
     def ok(self) -> bool:
         return not self.error and bool(self.clips)
