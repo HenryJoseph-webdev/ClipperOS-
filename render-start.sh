@@ -3,12 +3,9 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BGUTIL_DIR="$ROOT/.render/bgutil-ytdlp-pot-provider"
-DENO_DIR="$ROOT/.render/deno"
-export PATH="$DENO_DIR/bin:$PATH"
 
-cd "$BGUTIL_DIR/server/node_modules"
-deno run --allow-env --allow-net --allow-ffi=. --allow-read=. \
-  ../src/main.ts --port 4416 > "$ROOT/.render/bgutil-provider.log" 2>&1 &
+cd "$BGUTIL_DIR/server"
+node build/main.js --port 4416 > "$ROOT/.render/bgutil-provider.log" 2>&1 &
 PROVIDER_PID=$!
 
 cleanup() {
@@ -20,6 +17,12 @@ for _ in {1..30}; do
   if curl -fsS http://127.0.0.1:4416/ping >/dev/null 2>&1; then
     break
   fi
+  if ! kill -0 "$PROVIDER_PID" 2>/dev/null; then
+    echo "=== BGUTIL PROVIDER LOG ==="
+    cat "$ROOT/.render/bgutil-provider.log" || true
+    echo "=== END BGUTIL PROVIDER LOG ==="
+    exit 1
+  fi
   sleep 1
 done
 
@@ -29,5 +32,6 @@ echo "=== BGUTIL PROVIDER LOG ==="
 cat "$ROOT/.render/bgutil-provider.log" || true
 echo "=== END BGUTIL PROVIDER LOG ==="
 
+echo "BgUtils provider is ready on 127.0.0.1:4416"
 cd "$ROOT"
 exec gunicorn --bind "0.0.0.0:${PORT:-10000}" --workers 1 production:application
