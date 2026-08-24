@@ -4,20 +4,16 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BGUTIL_VERSION="1.3.2"
 BGUTIL_DIR="$ROOT/.render/bgutil-ytdlp-pot-provider"
-DENO_DIR="$ROOT/.render/deno"
 
 python -m pip install -r "$ROOT/requirements.txt"
 
-if ! command -v ffmpeg >/dev/null 2>&1; then
-  apt-get update
-  apt-get install -y ffmpeg
-fi
+apt-get update
+apt-get install -y ffmpeg curl ca-certificates git
 
-if ! command -v deno >/dev/null 2>&1; then
-  mkdir -p "$DENO_DIR"
-  curl -fsSL https://deno.land/install.sh | DENO_INSTALL="$DENO_DIR" sh
+if ! command -v node >/dev/null 2>&1 || ! node -e 'process.exit(Number(process.versions.node.split(".")[0]) >= 20 ? 0 : 1)' ; then
+  curl -fsSL https://deb.nodesource.com/setup_22.x | bash -
+  apt-get install -y nodejs
 fi
-export PATH="$DENO_DIR/bin:$PATH"
 
 if [ ! -d "$BGUTIL_DIR/server" ]; then
   mkdir -p "$ROOT/.render"
@@ -27,5 +23,9 @@ if [ ! -d "$BGUTIL_DIR/server" ]; then
 fi
 
 cd "$BGUTIL_DIR/server"
-deno install --node-modules-dir=auto --allow-scripts=npm:canvas --frozen
+npm ci --no-audit --no-fund
+npx tsc
+
+test -f "$BGUTIL_DIR/server/build/main.js"
 test -d "$BGUTIL_DIR/server/node_modules"
+node --version
