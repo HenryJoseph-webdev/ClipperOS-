@@ -25,5 +25,9 @@ done
 
 curl -fsS http://127.0.0.1:4416/ping >/dev/null
 
+echo "=== BGUTIL PROVIDER LOG ==="
+cat "$ROOT/.render/bgutil-provider.log" || true
+echo "=== END BGUTIL PROVIDER LOG ==="
+
 cd "$ROOT"
 exec gunicorn --bind "0.0.0.0:${PORT:-10000}" --workers 1 production:application
