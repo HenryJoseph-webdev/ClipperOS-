@@ -110,6 +110,17 @@ def _base_opts() -> dict:
         "no_warnings": not DEBUG,
         "noprogress":  False,
         "newline":     True,
+        # YouTube currently requires PO tokens for the mweb client's GVS
+        # requests on some server IPs. The bgutil provider plugin obtains
+        # fresh, video-bound tokens from the local Render-side provider.
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["mweb"],
+            },
+            "youtubepot-bgutilhttp": {
+                "base_url": ["http://127.0.0.1:4416"],
+            },
+        },
     }
     opts.update(_auth_to_opts())
     return opts

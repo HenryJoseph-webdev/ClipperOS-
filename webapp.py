@@ -90,8 +90,9 @@ JOBS_LOCK = threading.Lock()
 def decode_ytdlp_error(returncode: int, stderr: str = "", detail: str = "") -> str:
     combined = f"{stderr} {detail}".lower()
     if "sign in to confirm" in combined or ("bot" in combined and "youtube" in combined):
-        return ("YouTube blocked this request (bot detection). "
-                "Connect your YouTube account in Settings, or try again in a few minutes.")
+        return ("YouTube rejected this request or requires verification. "
+                "The PO-token provider may be unavailable or YouTube may be "
+                "blocking this server IP. Please try again later.")
     if "private video" in combined:
         return "This video is private and can't be downloaded."
     if "video unavailable" in combined:
@@ -99,6 +100,12 @@ def decode_ytdlp_error(returncode: int, stderr: str = "", detail: str = "") -> s
     if "requested format is not available" in combined:
         return (f"That quality isn't available. Try 720p instead."
                 f"{(' (' + detail[:120] + ')') if detail else ''}")
+    if ("sign in to confirm" in combined or "not a bot" in combined
+            or "requires verification" in combined or "botguard" in combined
+            or "po token" in combined):
+        return ("YouTube rejected this request or requires verification. "
+                "The PO-token provider may be unavailable or YouTube may be "
+                "blocking this server IP. Please try again later.")
     if "ffmpeg" in combined and ("not found" in combined or "not install" in combined):
         return "Audio processing is unavailable. Check the media tools installation and restart ClipperOS."
     if returncode == 1 and detail:
