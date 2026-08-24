@@ -27,4 +27,5 @@ if [ ! -d "$BGUTIL_DIR/server" ]; then
 fi
 
 cd "$BGUTIL_DIR/server"
-deno install --allow-scripts=npm:canvas --frozen
+deno install --node-modules-dir=auto --allow-scripts=npm:canvas --frozen
+test -d "$BGUTIL_DIR/server/node_modules"
