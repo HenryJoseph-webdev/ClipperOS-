@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BGUTIL_DIR="$ROOT/bgutil-provider"
+BGUTIL_DIR="$ROOT/.render/bgutil-ytdlp-pot-provider"
 
 cd "$BGUTIL_DIR/server"
 node build/main.js --port 4416 > "$ROOT/bgutil-provider.log" 2>&1 &
