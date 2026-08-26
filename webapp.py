@@ -17,7 +17,7 @@ import sys
 import threading
 import uuid
 from datetime import datetime
-from flask import Flask, jsonify, redirect, request
+from flask import Flask, jsonify, redirect, request, send_file
 
 CLIPPER_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, CLIPPER_ROOT)
@@ -395,6 +395,54 @@ def api_open_folder():
 
     except Exception as exc:
         return jsonify({"ok": False, "error": "Could not open the download folder."}), 500
+
+
+# ── Download the finished file ─────────────────────────────────────────────────
+
+@app.route("/api/download/file/<job_id>")
+def api_download_file(job_id):
+    """
+    Stream a completed job's file back through the HTTP response so the
+    browser saves it into the *user's own* default Downloads folder.
+
+    This replaces server-side "open folder" — that only ever worked when
+    the Flask server and the browser were on the same machine (local dev).
+    In production (Render), the server's filesystem is not the tester's
+    machine, so this is the only way the file actually reaches them.
+
+    Works for both media jobs (result.output_path) and transcript jobs
+    (result.file_path).
+    """
+    with JOBS_LOCK:
+        job = JOBS.get(job_id)
+
+    if not job:
+        return jsonify({"error": "Job not found."}), 404
+    if job.get("status") != "done":
+        return jsonify({"error": "This job hasn't finished yet."}), 409
+
+    result    = job.get("result") or {}
+    file_path = result.get("output_path") or result.get("file_path")
+    if not file_path:
+        return jsonify({"error": "No file is associated with this job."}), 404
+
+    abs_path = os.path.abspath(file_path)
+    base     = os.path.abspath(BASE_DOWNLOAD_FOLDER)
+
+    # Security: only ever serve files inside ClipperOS's own download tree
+    # (this also covers TRANSCRIPT_BASE, since it's nested under it).
+    if not (abs_path == base or abs_path.startswith(base + os.sep)):
+        return jsonify({"error": "File is outside the allowed download folder."}), 403
+
+    if not os.path.isfile(abs_path):
+        return jsonify({"error": "File no longer exists on the server."}), 404
+
+    return send_file(
+        abs_path,
+        as_attachment=True,
+        download_name=os.path.basename(abs_path),
+        conditional=True,
+    )
 
 
 # ── Transcript ────────────────────────────────────────────────────────────────
