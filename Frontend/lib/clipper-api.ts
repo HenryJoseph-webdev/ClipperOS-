@@ -90,30 +90,9 @@ export function openFolder(path: string) {
 // Triggers a real browser download for a finished job. The browser (not the
 // server) decides where the file lands — normally the user's own default
 // Downloads folder — which is what we want for testers on other machines.
-export async function downloadJobFile(jobId: string) {
-  const response = await fetch(`/api/download/file/${encodeURIComponent(jobId)}`)
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({})) as { error?: string; message?: string }
-    throw new Error(body.error || body.message || `Download failed (${response.status})`)
-  }
-
-  const blob = await response.blob()
-  const disposition = response.headers.get('Content-Disposition') || ''
-  const encodedName = disposition.match(/filename\*=UTF-8''([^;]+)/i)?.[1]
-  const plainName = disposition.match(/filename="?([^";]+)"?/i)?.[1]
-  let filename = encodedName || plainName || `clipperos-${jobId}.mp4`
-  try { filename = decodeURIComponent(filename) } catch { /* Keep the header value. */ }
-  filename = filename.split(/[\\/]/).pop() || `clipperos-${jobId}.mp4`
-
-  const objectUrl = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = objectUrl
-  link.download = filename
-  link.rel = 'noopener'
-  document.body.appendChild(link)
-  link.click()
-  link.remove()
-  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
+export function downloadJobFile(jobId: string) {
+  const url = `/api/download/file/${encodeURIComponent(jobId)}`
+  window.location.assign(url)
 }
 
 export function startTranscript(url: string) {
