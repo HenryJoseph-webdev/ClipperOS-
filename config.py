@@ -6,6 +6,9 @@ APP_VERSION = "1.2"
 
 # ─── Base Download Folder ─────────────────────────────────────────────────────
 BASE_DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "ClipperOS")
+JOB_DATABASE = os.environ.get(
+    "CLIPPEROS_JOB_DB", os.path.join(BASE_DOWNLOAD_FOLDER, "jobs.sqlite3")
+)
 
 # ─── Per-Platform Folders ─────────────────────────────────────────────────────
 # (duplicate definition removed — was defined twice identically)

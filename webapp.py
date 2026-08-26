@@ -15,6 +15,7 @@ import re
 import subprocess
 import sys
 import threading
+import time
 import uuid
 from datetime import datetime
 from flask import Flask, jsonify, redirect, request, send_file
@@ -28,6 +29,8 @@ from config import (APP_NAME, APP_VERSION, HISTORY_FILE, DEFAULT_QUALITY,
                     GEMINI_API_KEY, OPENROUTER_API_KEY)
 from downloader import download_full, download_clip, _run_with_ydl, _base_opts
 from utils import detect_platform, clean_filename, ensure_platform_folder
+from job_store import get_job as get_persisted_job, list_jobs as list_persisted_jobs
+from job_store import save_job as save_persisted_job
 
 TRANSCRIPT_AVAILABLE = False
 AI_AVAILABLE = False
@@ -83,6 +86,8 @@ app = Flask(__name__)
 
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
+_LAST_JOB_PERSIST: dict[str, float] = {}
+_JOB_PERSIST_INTERVAL = 2.0
 
 
 # ─── Error decoder ────────────────────────────────────────────────────────────
@@ -123,17 +128,21 @@ def decode_ytdlp_error(returncode: int, stderr: str = "", detail: str = "") -> s
 
 def new_job(job_type: str) -> str:
     job_id = str(uuid.uuid4())[:8]
+    now = datetime.now().strftime("%H:%M:%S")
+    job = {
+        "id":         job_id,
+        "type":       job_type,
+        "status":     "running",
+        "message":    "Starting...",
+        "progress":   0,
+        "result":     None,
+        "error":      None,
+        "created_at": now,
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+    }
     with JOBS_LOCK:
-        JOBS[job_id] = {
-            "id":         job_id,
-            "type":       job_type,
-            "status":     "running",
-            "message":    "Starting...",
-            "progress":   0,
-            "result":     None,
-            "error":      None,
-            "created_at": datetime.now().strftime("%H:%M:%S"),
-        }
+        JOBS[job_id] = job
+        _persist_job(job, force=True)
     return job_id
 
 
@@ -141,6 +150,53 @@ def update_job(job_id: str, **kwargs):
     with JOBS_LOCK:
         if job_id in JOBS:
             JOBS[job_id].update(kwargs)
+            JOBS[job_id]["updated_at"] = datetime.now().isoformat(timespec="seconds")
+            force = (
+                kwargs.get("status") in {"queued", "running", "done", "error"}
+                or "error" in kwargs
+                or "result" in kwargs
+            )
+            _persist_job(JOBS[job_id], force=force)
+
+
+def _persist_job(job: dict, force: bool = False) -> bool:
+    now = time.monotonic()
+    if not force and now - _LAST_JOB_PERSIST.get(job["id"], 0.0) < _JOB_PERSIST_INTERVAL:
+        return True
+    try:
+        save_persisted_job(job)
+    except Exception as exc:
+        print(f"   ⚠️  Could not persist job {job['id']}: {exc}")
+        return False
+    _LAST_JOB_PERSIST[job["id"]] = now
+    return True
+
+
+def _get_job(job_id: str):
+    with JOBS_LOCK:
+        active_job = JOBS.get(job_id)
+    if active_job is not None:
+        return active_job
+
+    try:
+        job = get_persisted_job(job_id)
+    except Exception as exc:
+        print(f"   ⚠️  Could not read persisted job {job_id}: {exc}")
+        job = None
+    if job is not None:
+        return job
+    return None
+
+
+def _list_jobs():
+    try:
+        return list_persisted_jobs()
+    except Exception as exc:
+        print(f"   ⚠️  Could not read persisted jobs: {exc}")
+        with JOBS_LOCK:
+            jobs = list(JOBS.values())
+        jobs.sort(key=lambda job: job["created_at"], reverse=True)
+        return jobs[:20]
 
 
 def run_ytdlp_capture(command: list) -> tuple[int, str]:
@@ -413,8 +469,7 @@ def api_download_file(job_id):
     Works for both media jobs (result.output_path) and transcript jobs
     (result.file_path).
     """
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
+    job = _get_job(job_id)
 
     if not job:
         return jsonify({"error": "Job not found."}), 404
@@ -579,8 +634,7 @@ def api_analyze():
 
 @app.route("/api/job/<job_id>")
 def api_job_status(job_id):
-    with JOBS_LOCK:
-        job = JOBS.get(job_id)
+    job = _get_job(job_id)
     if not job:
         return jsonify({"error": "Job not found."}), 404
     return jsonify(job)
@@ -588,10 +642,7 @@ def api_job_status(job_id):
 
 @app.route("/api/jobs")
 def api_jobs():
-    with JOBS_LOCK:
-        jobs = list(JOBS.values())
-    jobs.sort(key=lambda j: j["created_at"], reverse=True)
-    return jsonify(jobs[:20])
+    return jsonify(_list_jobs())
 
 
 # ── History ───────────────────────────────────────────────────────────────────
