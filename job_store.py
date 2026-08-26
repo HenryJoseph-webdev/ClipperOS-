@@ -35,6 +35,8 @@ def init_db() -> None:
                 detail TEXT,
                 error_kind TEXT,
                 error_status INTEGER,
+                filename TEXT,
+                storage_key TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
                 payload_json TEXT NOT NULL
@@ -54,6 +56,8 @@ def init_db() -> None:
             "detail": "TEXT",
             "error_kind": "TEXT",
             "error_status": "INTEGER",
+            "filename": "TEXT",
+            "storage_key": "TEXT",
             "created_at": "TEXT NOT NULL DEFAULT ''",
             "updated_at": "TEXT NOT NULL DEFAULT ''",
             "payload_json": "TEXT NOT NULL DEFAULT '{}'",
@@ -73,9 +77,10 @@ def save_job(job: dict[str, Any]) -> None:
             """
             INSERT INTO jobs (
                 id, type, status, progress, message, error, result_json,
-                detail, error_kind, error_status, created_at, updated_at,
+                detail, error_kind, error_status, filename, storage_key,
+                created_at, updated_at,
                 payload_json
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 type=excluded.type,
                 status=excluded.status,
@@ -86,6 +91,8 @@ def save_job(job: dict[str, Any]) -> None:
                 detail=excluded.detail,
                 error_kind=excluded.error_kind,
                 error_status=excluded.error_status,
+                filename=excluded.filename,
+                storage_key=excluded.storage_key,
                 created_at=excluded.created_at,
                 updated_at=excluded.updated_at,
                 payload_json=excluded.payload_json
@@ -101,6 +108,8 @@ def save_job(job: dict[str, Any]) -> None:
                 job.get("detail"),
                 job.get("error_kind"),
                 job.get("error_status"),
+                (result or {}).get("filename") if isinstance(result, dict) else None,
+                (result or {}).get("storage_key") if isinstance(result, dict) else None,
                 job["created_at"],
                 job["updated_at"],
                 json.dumps(job, ensure_ascii=False),
@@ -126,6 +135,11 @@ def _row_to_job(row: sqlite3.Row) -> dict[str, Any]:
             "updated_at": row["updated_at"],
         }
     )
+    if isinstance(job.get("result"), dict):
+        if row["filename"] and "filename" not in job["result"]:
+            job["result"]["filename"] = row["filename"]
+        if row["storage_key"] and "storage_key" not in job["result"]:
+            job["result"]["storage_key"] = row["storage_key"]
     return job
 
 

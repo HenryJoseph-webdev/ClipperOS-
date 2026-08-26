@@ -31,6 +31,7 @@ from downloader import download_full, download_clip, _run_with_ydl, _base_opts
 from utils import detect_platform, clean_filename, ensure_platform_folder
 from job_store import get_job as get_persisted_job, list_jobs as list_persisted_jobs
 from job_store import save_job as save_persisted_job
+from storage import StorageError, storage
 
 TRANSCRIPT_AVAILABLE = False
 AI_AVAILABLE = False
@@ -88,6 +89,16 @@ JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
 _LAST_JOB_PERSIST: dict[str, float] = {}
 _JOB_PERSIST_INTERVAL = 2.0
+
+
+def _store_completed_media(job_id: str, output_path: str, filename: str) -> dict:
+    storage_key = f"media/{job_id}/{os.path.basename(output_path) or filename}"
+    storage.upload_file(output_path, storage_key, filename)
+    try:
+        os.remove(output_path)
+    except OSError as exc:
+        print(f"   ⚠️  Could not remove temporary media {output_path}: {exc}")
+    return {"filename": filename, "storage_key": storage_key}
 
 
 # ─── Error decoder ────────────────────────────────────────────────────────────
@@ -199,6 +210,21 @@ def _list_jobs():
         return jobs[:20]
 
 
+def _public_job(job: dict) -> dict:
+    public_job = dict(job)
+    result = job.get("result")
+    if isinstance(result, dict):
+        public_result = dict(result)
+        private_path = public_result.get("output_path") or public_result.get("file_path")
+        if private_path and "filename" not in public_result:
+            public_result["filename"] = os.path.basename(private_path)
+        public_result.pop("output_path", None)
+        public_result.pop("file_path", None)
+        public_result.pop("storage_key", None)
+        public_job["result"] = public_result
+    return public_job
+
+
 def run_ytdlp_capture(command: list) -> tuple[int, str]:
     try:
         result = subprocess.run(command, capture_output=True, text=True)
@@ -262,14 +288,13 @@ def api_download_clip():
 
         if result and result.returncode == 0:
             output_path = result.output_path or ""
-            update_job(job_id, status="done", progress=100,
-                       message=f"Saved — {os.path.basename(output_path) or filename}",
-                       result={
-                           "filename":    filename,
-                           "quality":     quality,
-                           "output_path": output_path,
-                           "folder":      os.path.dirname(output_path) if output_path else "",
-                       })
+            try:
+                stored = _store_completed_media(job_id, output_path, os.path.basename(output_path) or filename)
+                update_job(job_id, status="done", progress=100,
+                           message=f"Saved — {stored['filename']}",
+                           result={**stored, "quality": quality})
+            except StorageError as exc:
+                update_job(job_id, status="error", error=str(exc))
         else:
             code   = result.returncode if result else -1
             detail = result.stderr if result and result.stderr else ""
@@ -307,14 +332,13 @@ def api_download_full():
 
         if result and result.returncode == 0:
             output_path = result.output_path or ""
-            update_job(job_id, status="done", progress=100,
-                       message=f"Saved — {os.path.basename(output_path) or filename}",
-                       result={
-                           "filename":    filename,
-                           "quality":     quality,
-                           "output_path": output_path,
-                           "folder":      os.path.dirname(output_path) if output_path else "",
-                       })
+            try:
+                stored = _store_completed_media(job_id, output_path, os.path.basename(output_path) or filename)
+                update_job(job_id, status="done", progress=100,
+                           message=f"Saved — {stored['filename']}",
+                           result={**stored, "quality": quality})
+            except StorageError as exc:
+                update_job(job_id, status="error", error=str(exc))
         else:
             code   = result.returncode if result else -1
             detail = result.stderr if result and result.stderr else ""
@@ -372,14 +396,13 @@ def api_download_audio():
 
         if result and result.returncode == 0:
             output_path = result.output_path or ""
-            update_job(job_id, status="done", progress=100,
-                       message=f"Saved — {os.path.basename(output_path) or filename + '.' + fmt}",
-                       result={
-                           "filename":    f"{filename}.{fmt}",
-                           "format":      fmt,
-                           "folder":      folder,
-                           "output_path": output_path,
-                       })
+            try:
+                stored = _store_completed_media(job_id, output_path, os.path.basename(output_path) or f"{filename}.{fmt}")
+                update_job(job_id, status="done", progress=100,
+                           message=f"Saved — {stored['filename']}",
+                           result={**stored, "format": fmt})
+            except StorageError as exc:
+                update_job(job_id, status="error", error=str(exc))
         else:
             code   = result.returncode if result else -1
             detail = result.stderr if result and result.stderr else ""
@@ -477,9 +500,17 @@ def api_download_file(job_id):
         return jsonify({"error": "This job hasn't finished yet."}), 409
 
     result    = job.get("result") or {}
-    file_path = result.get("output_path") or result.get("file_path")
+    storage_key = result.get("storage_key")
+    filename = result.get("filename") or "download"
+    if storage_key:
+        try:
+            return redirect(storage.signed_download_url(storage_key, filename))
+        except StorageError as exc:
+            return jsonify({"error": str(exc)}), 503
+
+    file_path = result.get("file_path") if job.get("type") == "transcript" else None
     if not file_path:
-        return jsonify({"error": "No file is associated with this job."}), 404
+        return jsonify({"error": "No persistent file is associated with this job."}), 404
 
     abs_path = os.path.abspath(file_path)
     base     = os.path.abspath(BASE_DOWNLOAD_FOLDER)
@@ -637,12 +668,12 @@ def api_job_status(job_id):
     job = _get_job(job_id)
     if not job:
         return jsonify({"error": "Job not found."}), 404
-    return jsonify(job)
+    return jsonify(_public_job(job))
 
 
 @app.route("/api/jobs")
 def api_jobs():
-    return jsonify(_list_jobs())
+    return jsonify([_public_job(job) for job in _list_jobs()])
 
 
 # ── History ───────────────────────────────────────────────────────────────────

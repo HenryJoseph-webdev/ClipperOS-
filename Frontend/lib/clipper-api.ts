@@ -26,8 +26,8 @@ export type HistoryEntry = {
 export type TranscriptResult = {
   video_id: string
   platform: string
+  filename?: string
   word_count: number
-  file_path?: string
   title?: string
   preview?: string
   cached?: boolean

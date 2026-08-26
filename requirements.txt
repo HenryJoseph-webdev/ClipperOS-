@@ -2,5 +2,6 @@ Flask
 yt-dlp==2026.08.19
 bgutil-ytdlp-pot-provider==1.3.2
 requests
+boto3
 google-genai
 gunicorn
