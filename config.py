@@ -9,14 +9,12 @@ BASE_DOWNLOAD_FOLDER = os.path.join(os.path.expanduser("~"), "Downloads", "Clipp
 JOB_DATABASE = os.environ.get(
     "CLIPPEROS_JOB_DB", os.path.join(BASE_DOWNLOAD_FOLDER, "jobs.sqlite3")
 )
-R2_ACCOUNT_ID = os.environ.get("R2_ACCOUNT_ID", "").strip()
-R2_ACCESS_KEY_ID = os.environ.get("R2_ACCESS_KEY_ID", "").strip()
-R2_SECRET_ACCESS_KEY = os.environ.get("R2_SECRET_ACCESS_KEY", "").strip()
-R2_BUCKET = os.environ.get("R2_BUCKET", "").strip()
-R2_ENDPOINT = os.environ.get(
-    "R2_ENDPOINT", f"https://{R2_ACCOUNT_ID}.r2.cloudflarestorage.com" if R2_ACCOUNT_ID else ""
-).strip()
-R2_SIGNED_URL_TTL = int(os.environ.get("R2_SIGNED_URL_TTL", "900"))
+B2_APPLICATION_KEY_ID = os.environ.get("B2_APPLICATION_KEY_ID", "").strip()
+B2_APPLICATION_KEY = os.environ.get("B2_APPLICATION_KEY", "").strip()
+B2_BUCKET_NAME = os.environ.get("B2_BUCKET_NAME", "").strip()
+B2_ENDPOINT = os.environ.get("B2_ENDPOINT", "").strip()
+B2_REGION = os.environ.get("B2_REGION", "").strip()
+B2_SIGNED_URL_TTL = int(os.environ.get("B2_SIGNED_URL_TTL", "900"))
 
 # ─── Per-Platform Folders ─────────────────────────────────────────────────────
 # (duplicate definition removed — was defined twice identically)

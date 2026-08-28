@@ -1,4 +1,4 @@
-"""Provider-neutral persistent media storage backed by Cloudflare R2."""
+"""Provider-neutral persistent media storage backed by Backblaze B2."""
 
 from __future__ import annotations
 
@@ -8,11 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from config import (
-    R2_ACCESS_KEY_ID,
-    R2_BUCKET,
-    R2_ENDPOINT,
-    R2_SECRET_ACCESS_KEY,
-    R2_SIGNED_URL_TTL,
+    B2_APPLICATION_KEY,
+    B2_APPLICATION_KEY_ID,
+    B2_BUCKET_NAME,
+    B2_ENDPOINT,
+    B2_REGION,
+    B2_SIGNED_URL_TTL,
 )
 
 
@@ -20,19 +21,20 @@ class StorageError(RuntimeError):
     """Raised when a persistent storage operation cannot be completed."""
 
 
-class R2Storage:
+class B2Storage:
     def __init__(self, client: Any = None):
-        self.bucket = R2_BUCKET
-        self.ttl = R2_SIGNED_URL_TTL
+        self.bucket = B2_BUCKET_NAME
+        self.ttl = B2_SIGNED_URL_TTL
         self._client = client
 
     @property
     def configured(self) -> bool:
         return bool(
             self.bucket
-            and R2_ENDPOINT
-            and R2_ACCESS_KEY_ID
-            and R2_SECRET_ACCESS_KEY
+            and B2_ENDPOINT
+            and B2_REGION
+            and B2_APPLICATION_KEY_ID
+            and B2_APPLICATION_KEY
         )
 
     def _get_client(self):
@@ -45,10 +47,10 @@ class R2Storage:
 
             self._client = boto3.client(
                 "s3",
-                endpoint_url=R2_ENDPOINT,
-                aws_access_key_id=R2_ACCESS_KEY_ID,
-                aws_secret_access_key=R2_SECRET_ACCESS_KEY,
-                region_name="auto",
+                endpoint_url=B2_ENDPOINT,
+                aws_access_key_id=B2_APPLICATION_KEY_ID,
+                aws_secret_access_key=B2_APPLICATION_KEY,
+                region_name=B2_REGION,
             )
             return self._client
         except Exception as exc:
@@ -98,4 +100,4 @@ class R2Storage:
             raise StorageError(f"Could not create a media download URL: {exc}") from exc
 
 
-storage = R2Storage()
+storage = B2Storage()
