@@ -4,6 +4,31 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BGUTIL_DIR="$ROOT/.render/bgutil-ytdlp-pot-provider"
 
+export XDG_CONFIG_HOME="$ROOT/.render/config"
+AUTH_DIR="$XDG_CONFIG_HOME/clipperos"
+COOKIES_PATH="$AUTH_DIR/cookies.txt"
+AUTH_PREFS_PATH="$AUTH_DIR/auth_prefs.json"
+
+if [ -z "${YOUTUBE_COOKIES_B64:-}" ]; then
+  echo "[auth] ERROR: YOUTUBE_COOKIES_B64 is not configured." >&2
+  exit 1
+fi
+
+mkdir -p "$AUTH_DIR"
+if ! printf '%s' "$YOUTUBE_COOKIES_B64" | base64 --decode > "$COOKIES_PATH"; then
+  rm -f "$COOKIES_PATH"
+  echo "[auth] ERROR: YOUTUBE_COOKIES_B64 could not be decoded." >&2
+  exit 1
+fi
+if [ ! -s "$COOKIES_PATH" ]; then
+  rm -f "$COOKIES_PATH"
+  echo "[auth] ERROR: YOUTUBE_COOKIES_B64 decoded to an empty file." >&2
+  exit 1
+fi
+chmod 600 "$COOKIES_PATH"
+printf '%s' '{"provider":"cookies_file"}' > "$AUTH_PREFS_PATH"
+chmod 600 "$AUTH_PREFS_PATH"
+
 if [ ! -f "$BGUTIL_DIR/server/build/main.js" ]; then
   echo "[bgutil] ERROR: provider build is missing at $BGUTIL_DIR/server/build/main.js" >&2
   echo "[bgutil] Run render-build.sh successfully before starting the service." >&2
