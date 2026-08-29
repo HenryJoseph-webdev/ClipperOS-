@@ -11,7 +11,10 @@ Changes from v1.4.1:
 """
 
 import os
+import concurrent.futures
+import ipaddress
 import re
+import socket
 import subprocess
 import sys
 import threading
@@ -19,6 +22,9 @@ import time
 import uuid
 from datetime import datetime
 from flask import Flask, jsonify, redirect, request, send_file
+from importlib.metadata import PackageNotFoundError, version as package_version
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 CLIPPER_ROOT = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, CLIPPER_ROOT)
@@ -84,6 +90,63 @@ except ImportError:
     _save_cookies_file = None
 
 app = Flask(__name__)
+
+
+def _network_dns(host: str) -> dict:
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(socket.getaddrinfo, host, 443, type=socket.SOCK_STREAM)
+        addresses = sorted({item[4][0] for item in future.result(timeout=5)})
+        return {"resolved": True, "addresses": addresses}
+    except concurrent.futures.TimeoutError:
+        return {"resolved": False, "error": "timeout"}
+    except OSError:
+        return {"resolved": False, "error": "resolution_failed"}
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
+
+
+def _network_https_status(url: str) -> dict:
+    try:
+        with urlopen(Request(url, method="GET"), timeout=5) as response:
+            return {"status_code": response.status}
+    except HTTPError as exc:
+        return {"status_code": exc.code}
+    except TimeoutError:
+        return {"status_code": None, "error": "timeout"}
+    except (URLError, OSError):
+        return {"status_code": None, "error": "connection_failed"}
+
+
+def _network_public_ip() -> str | None:
+    try:
+        with urlopen("https://api.ipify.org", timeout=5) as response:
+            value = response.read(64).decode("ascii").strip()
+        ipaddress.ip_address(value)
+        return value
+    except (HTTPError, OSError, TimeoutError, UnicodeDecodeError, ValueError):
+        return None
+
+
+@app.route("/api/diagnostics/network")
+def api_diagnostics_network():
+    try:
+        ytdlp_version = package_version("yt-dlp")
+    except PackageNotFoundError:
+        ytdlp_version = None
+    return jsonify({
+        "yt_dlp_version": ytdlp_version,
+        "dns": {
+            "youtube.com": _network_dns("youtube.com"),
+            "www.youtube.com": _network_dns("www.youtube.com"),
+            "www.tiktok.com": _network_dns("www.tiktok.com"),
+        },
+        "https": {
+            "youtube.com": _network_https_status("https://www.youtube.com"),
+            "tiktok.com": _network_https_status("https://www.tiktok.com"),
+        },
+        "public_ip": _network_public_ip(),
+    })
 
 JOBS: dict[str, dict] = {}
 JOBS_LOCK = threading.Lock()
